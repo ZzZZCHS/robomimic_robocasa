@@ -1,0 +1,23 @@
+/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_navigate/NavigateKitchen/2024-05-09/demo_gentex_im256_randcams.hdf5
+ROBOMIMIC WARNING(
+    No private macro file found!
+    It is recommended to use a private macro file
+    To setup, run: python /ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robomimic/robomimic/scripts/setup_macros.py
+)
+input file: /ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_navigate/NavigateKitchen/2024-05-09/demo.hdf5
+output file: /ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_navigate/NavigateKitchen/2024-05-09/demo_gentex_im256_randcams.hdf5
+[robosuite WARNING] No private macro file found! (macros.py:53)
+[robosuite WARNING] No private macro file found! (macros.py:53)
+[robosuite WARNING] No private macro file found! (macros.py:53)
+[robosuite WARNING] No private macro file found! (macros.py:53)
+[robosuite WARNING] No private macro file found! (macros.py:53)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:54)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:54)
+[robosuite WARNING] To setup, run: python /ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robosuite/robosuite/scripts/setup_macros.py (macros.py:55)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:54)
+[robosuite WARNING] To setup, run: python /ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robosuite/robosuite/scripts/setup_macros.py (macros.py:55)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:54)
+[robosuite WARNING] To setup, run: python /ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robosuite/robosuite/scripts/setup_macros.py (macros.py:55)
+[robosuite WARNING] To setup, run: python /ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robosuite/robosuite/scripts/setup_macros.py (macros.py:55)
+[robosuite WARNING] It is recommended to use a private macro file (macros.py:54)
+[robosuite WARNING] To setup, run: python /ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robosuite/robosuite/scripts/setup_macros.py (macros.py:55)
