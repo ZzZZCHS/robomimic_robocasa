@@ -9,6 +9,7 @@ examples/simple_train_loop.py
 examples/train_bc_rnn.py
 robomimic/__init__.py
 robomimic/macros.py
+robomimic/macros_private.py
 robomimic.egg-info/PKG-INFO
 robomimic.egg-info/SOURCES.txt
 robomimic.egg-info/dependency_links.txt
@@ -49,6 +50,7 @@ robomimic/envs/wrappers.py
 robomimic/exps/templates/act.json
 robomimic/exps/templates/bc.json
 robomimic/exps/templates/bc_transformer.json
+robomimic/exps/templates/bc_transformer_addmask.json
 robomimic/exps/templates/bcq.json
 robomimic/exps/templates/cql.json
 robomimic/exps/templates/diffusion_policy.json
@@ -66,6 +68,7 @@ robomimic/models/policy_nets.py
 robomimic/models/transformers.py
 robomimic/models/vae_nets.py
 robomimic/models/value_nets.py
+robomimic/scripts/add_obj_to_dataset.py
 robomimic/scripts/copy_ds_key.py
 robomimic/scripts/dataset_states_to_obs.py
 robomimic/scripts/download_datasets.py

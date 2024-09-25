@@ -16,7 +16,7 @@ find "$DATA_ROOT" -type f -name "demo.hdf5" | while read -r file; do
     TARGET_FILE="$PARENT_DIR/demo_gentex_im256_randcams.hdf5"
 
     # Check if the target file does not exist
-    if [ ! -f "$TARGET_FILE" ];  then
+    if [ ! -f "$TARGET_FILE" ]; then
         # Run the specified command with the necessary environment variables
         echo $TARGET_FILE
         MUJOCO_GL=egl OMP_NUM_THREADS=1 MPI_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \

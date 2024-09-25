@@ -272,7 +272,10 @@ class ConfigGenerator(object):
 
             # populate list of identifying meta for logger;
             # see meta_config method in base_config.py for more info
-            json_dict["experiment"]["logging"]["wandb_proj_name"] = self.wandb_proj_name
+            if "logging" not in json_dict["experiment"]:
+                json_dict["experiment"]["logging"] = dict()
+            if self.wandb_proj_name is not None:
+                json_dict["experiment"]["logging"]["wandb_proj_name"] = self.wandb_proj_name
             if "meta" not in json_dict:
                 json_dict["meta"] = dict()
             json_dict["meta"].update(

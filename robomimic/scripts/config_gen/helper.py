@@ -556,6 +556,7 @@ def make_generator(args, make_generator_helper):
 
     if args.debug or args.tmplog:
         args.no_wandb = True
+    args.no_wandb = True  # do not use wandb currently
 
     if args.wandb_proj_name is not None:
         # prepend data to wandb name

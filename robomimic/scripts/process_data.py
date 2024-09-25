@@ -24,9 +24,7 @@ def extract_noun_phrases(text):
 
 if __name__ == "__main__":
     
-    breakpoint()
-
-    grounding_model = GroundUtils(device="cuda:2")
+    grounding_model = GroundUtils(device="cuda:1")
     data_root = 'groundingLMM/robocasa_datasets'
     ori_data_dir = os.path.join(data_root, 'v0.1/single_stage')
 
@@ -35,7 +33,7 @@ if __name__ == "__main__":
     prompt_template = "Can you segment {}?"
 
     src_name = 'demo_gentex_im128_randcams.hdf5'
-    tgt_name = 'demo_gentex_im128_randcams_addmask.hdf5'
+    tgt_name = 'demo_gentex_im128_randcams_addmask_new.hdf5'
 
 
     if not os.path.exists(ori_data_dir):

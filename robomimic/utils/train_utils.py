@@ -14,6 +14,7 @@ import numpy as np
 import traceback
 from copy import deepcopy
 from collections import OrderedDict
+import cv2
 
 import torch
 
@@ -266,7 +267,8 @@ def run_rollout(
         video_writer=None,
         video_skip=5,
         terminate_on_success=False,
-        grounding_model=None
+        grounding_model=None,
+        ep_i=0
     ):
     """
     Runs a rollout in an environment with the current network parameters.
@@ -296,8 +298,10 @@ def run_rollout(
     assert isinstance(env, EnvBase) or isinstance(env, EnvWrapper) or isinstance(env, SubprocVectorEnv)
 
     batched = isinstance(env, SubprocVectorEnv)
-
+    env.env.env.add_object_num = 10
+    env.env.env.rng = np.random.default_rng(ep_i + 317)
     ob_dict = env.reset()
+    
     policy.start_episode(lang=env._ep_lang_str)
     # print(env._ep_lang_str)
 
@@ -326,7 +330,9 @@ def run_rollout(
         # assert env.env.env.object_cfgs[0]['name'] == 'obj'
         # target_obj_name = env.env.env.object_cfgs[0]['info']['cat']
         
-        noun_phrases = grounding_model.extract_noun_phrases(env._ep_lang_str)
+        
+        
+        noun_phrases = grounding_model.extract_direct_object_phrases(env._ep_lang_str)
         
         prompt_template = "Can you segment {}?"
 
@@ -424,8 +430,18 @@ def run_rollout(
                     #     im_ret = np.transpose(im_ret, (0, 2, 3, 1))
                     #     im = np.concatenate((im_input, *im_ret), axis=1)
                     #     cam_imgs.append(im)
-
                     # frame = np.concatenate(cam_imgs, axis=0)
+                    frame = frame.copy()
+                    text1 = env._ep_lang_str
+                    position1 = (10, 50)
+                    color = (255, 0, 0)
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    thickness = 1
+                    font_scale = 0.5
+                    cv2.putText(frame, text1, position1, font, font_scale, color, thickness)
+                    text2 = f"Success: {success['task']}"
+                    position2 = (10, 100)
+                    cv2.putText(frame, text2, position2, font, font_scale, color, thickness)
                     video_frames.append(frame)
 
             video_count += 1
@@ -595,12 +611,16 @@ def rollout_with_stats(
                     video_writer=env_video_writer,
                     video_skip=video_skip,
                     terminate_on_success=terminate_on_success,
-                    grounding_model=grounding_model
+                    grounding_model=grounding_model,
+                    ep_i=ep_i
                 )
             except Exception as e:
                 print("Rollout exception at episode number {}!".format(ep_i))
                 print(traceback.format_exc())
-                break
+                # break
+                continue
+                
+                
             
             if batched:
                 rollout_info["time"] = [(time.time() - rollout_timestamp) / len(env)] * len(env)

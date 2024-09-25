@@ -164,6 +164,7 @@ if __name__ == "__main__":
         print("layout_counts:", layout_counts)
         print("style_counts:", style_counts)
         print("num unique lang instructions:", len(set(langs)))
+        print(set(langs))
         
 
     f.close()

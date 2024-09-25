@@ -491,3 +491,4 @@ Total number of subset samples: 11051
 Average number of subset samples 208.50943396226415
 Writing has finished
 Time elapsed: 389.26 seconds
+slurmstepd: error: *** JOB 41034 ON g0591 CANCELLED AT 2024-08-15T15:14:07 ***

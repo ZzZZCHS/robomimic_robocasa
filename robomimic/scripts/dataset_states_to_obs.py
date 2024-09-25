@@ -56,6 +56,11 @@ from robomimic.envs.env_base import EnvBase
 from robomimic.scripts.conversion.extract_action_dict import extract_action_dict
 from robomimic.scripts.filter_dataset_size import filter_dataset_size
 
+from robosuite.demos.demo_segmentation import segmentation_to_rgb
+
+from PIL import Image
+import imageio
+
 """ End of dataset_states_to_args copy over """
 
 def extract_trajectory(
@@ -64,7 +69,9 @@ def extract_trajectory(
     states, 
     actions,
     done_mode,
+    args,
     add_datagen_info=False,
+    debug=False
 ):
     """
     Helper function to extract observations, rewards, and dones along a trajectory using
@@ -83,8 +90,19 @@ def extract_trajectory(
     assert states.shape[0] == actions.shape[0]
 
     # load the initial state
-    env.reset()
-    obs = env.reset_to(initial_state)
+    # env.reset()
+    env.reset_to(initial_state)
+    
+    seg_sensors = {}
+    for cam_name in args.camera_names:
+        seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "instance", "segmentation")
+        seg_sensors[cam_name] = seg_sensor
+    name2id = {inst: i for i, inst in enumerate(list(env.env.model.instances_to_ids.keys()))}
+    
+    # if args.add_objs:p
+    #     zero_actions = np.zeros(actions.shape[1])
+    #     for i in range(15):
+    #         env.step(zero_actions)
 
     ep_meta = json.loads(initial_state["ep_meta"])
     # hack: add the cam configs in, since it's been modified
@@ -101,11 +119,21 @@ def extract_trajectory(
         states=np.array(states), 
         initial_state_dict=initial_state,
         datagen_info=[],
-    )    
+    )
+    
     traj_len = states.shape[0]
+    success = False
+    
+    if debug:
+        video_writer = imageio.get_writer("tmp.mp4", fps=20)
+        video_skip = 5
+        video_count = 0
     # iteration variable @t is over "next obs" indices
     for t in range(traj_len):
-        obs = deepcopy(env.reset_to({"states" : states[t]}))
+        if args.add_objs:
+            obs, r, _, info = env.step(actions[t])
+        else: 
+            obs = deepcopy(env.reset_to({"states" : states[t]}))
 
         # extract datagen info
         if add_datagen_info:
@@ -116,7 +144,8 @@ def extract_trajectory(
         # infer reward signal
         # note: our tasks use reward r(s'), reward AFTER transition, so this is
         #       the reward for the current timestep
-        r = env.get_reward()
+        if not args.add_objs:
+            r = env.get_reward()
 
         # infer done signal
         done = False
@@ -130,13 +159,41 @@ def extract_trajectory(
 
         # get the absolute action
         action_abs = env.base_env.convert_rel_to_abs_action(actions[t])
-
+        
+        success = env.is_success()["task"]
+        if debug:
+            if video_count % video_skip == 0:
+                video_img = []
+                for cam_name in args.camera_names:
+                    video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
+                video_img = np.concatenate(video_img, axis=1)
+                seg_img = []
+                for cam_name in args.camera_names:
+                    tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
+                    # tmp_seg[tmp_seg != name2id['obj'] + 1] = 0
+                    # tmp_seg = env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name, segmentation=True)
+                    seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
+                    seg_rgb[tmp_seg != name2id['obj'] + 1] = 0
+                    seg_img.append(seg_rgb)
+                seg_img = np.concatenate(seg_img, axis=1)
+                # breakpoint()
+                Image.fromarray(video_img).save('tmp.jpg')
+                Image.fromarray(seg_img).save('tmp3.jpg')
+                breakpoint()
+                video_writer.append_data(video_img)
+            video_count += 1
         # collect transition
         traj["obs"].append(obs)
         traj["rewards"].append(r)
         traj["dones"].append(done)
         traj["datagen_info"].append(datagen_info)
         traj["actions_abs"].append(action_abs)
+    
+    print(success)
+    print('object num:', len(env.env.object_cfgs))
+    if debug:
+        video_writer.close()
+        breakpoint()
 
     # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
     traj["obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["obs"])
@@ -152,7 +209,7 @@ def extract_trajectory(
         else:
             traj[k] = np.array(traj[k])
 
-    return traj
+    return traj, success
 
 
 """ The process that writes over the generated files to memory """
@@ -244,12 +301,13 @@ def write_traj_to_file(args, output_path, total_samples, total_run, processes, i
     f_out.close()
     f.close()
 
-    extract_action_dict(dataset=output_path)
-    for num_demos in [10, 20, 30, 40, 50, 60, 70, 75, 80, 90, 100, 125, 150, 200, 250, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 10000]:
-        filter_dataset_size(
-            output_path,
-            num_demos=num_demos,
-        )
+    if args.global_process_id is None:
+        extract_action_dict(dataset=output_path)
+        for num_demos in [10, 20, 30, 40, 50, 60, 70, 75, 80, 90, 100, 125, 150, 200, 250, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 10000]:
+            filter_dataset_size(
+                output_path,
+                num_demos=num_demos,
+            )
 
     print("Writing has finished")
     
@@ -350,15 +408,20 @@ def extract_multiple_trajectories_with_error(process_num, current_work_array, wo
 
             # extract obs, rewards, dones
             actions = f["data/{}/actions".format(ep)][()]
-                
-            traj = extract_trajectory(
-                env=env, 
-                initial_state=initial_state, 
-                states=states, 
-                actions=actions,
-                done_mode=args.done_mode,
-                add_datagen_info=args.add_datagen_info,
-            )
+            
+            try:   
+                traj, success = extract_trajectory(
+                    env=env, 
+                    initial_state=initial_state, 
+                    states=states, 
+                    actions=actions,
+                    done_mode=args.done_mode,
+                    args=args,
+                    add_datagen_info=args.add_datagen_info
+                )
+            except:
+                traj = {}
+                success = False
 
             # maybe copy reward or done signal from source file
             if args.copy_rewards:
@@ -380,7 +443,10 @@ def extract_multiple_trajectories_with_error(process_num, current_work_array, wo
             # IMPORTANT: keep name of group the same as source file, to make sure that filter keys are
             #            consistent as well
             # print("(process {}): ADD TO QUEUE index {}".format(process_num, ind))
-            mul_queue.put([ep, traj, process_num])
+            if success:
+                mul_queue.put([ep, traj, process_num])
+            else:
+                print(f"Process {process_num}: demo index {ind} fail...")
             
             ind = retrieve_new_index(process_num, current_work_array, work_queue, lock)
         except Exception as e:
@@ -413,10 +479,11 @@ def dataset_states_to_obs_multiprocessing(args):
         else:
             image_suffix = str(args.camera_width)
             image_suffix = image_suffix + "_randcams" if args.randomize_cameras else image_suffix
-            if args.generative_textures:
-                output_name = os.path.basename(args.dataset)[:-5] + "_gentex_im{}.hdf5".format(image_suffix)
-            else:
-                output_name = os.path.basename(args.dataset)[:-5] + "_im{}.hdf5".format(image_suffix)
+            image_suffix = image_suffix + "_gentex" if args.generative_textures else image_suffix
+            image_suffix = image_suffix + f"_process{args.global_process_id}" if args.global_process_id else image_suffix
+            # image_suffix = image_suffix + "_addobjs" if args.add_objs else image_suffix
+            
+            output_name = os.path.basename(args.dataset)[:-5] + "_im{}.hdf5".format(image_suffix)
 
     output_path = os.path.join(os.path.dirname(args.dataset), output_name)
     
@@ -435,6 +502,8 @@ def dataset_states_to_obs_multiprocessing(args):
 
     if args.n is not None:
         demos = demos[:args.n]
+    
+    demos = demos[args.interval_left:args.interval_right]
 
     num_demos = len(demos)
     f.close()
@@ -469,6 +538,98 @@ def dataset_states_to_obs_multiprocessing(args):
 
     print("Finished Multiprocessing")
     return
+
+
+def extract_trajectories_debug(args):
+    # create environment to use for data processing
+
+    if args.add_datagen_info:
+        import mimicgen.utils.file_utils as MG_FileUtils
+        env_meta = MG_FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
+    else:
+        env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
+    if args.generative_textures:
+        env_meta["env_kwargs"]["generative_textures"] = "100p"
+    if args.randomize_cameras:
+        env_meta["env_kwargs"]["randomize_cameras"] = True
+    env = EnvUtils.create_env_for_data_processing(
+        env_meta=env_meta,
+        camera_names=args.camera_names, 
+        camera_height=args.camera_height, 
+        camera_width=args.camera_width, 
+        reward_shaping=args.shaped,
+    )
+
+    start_time = time.time()
+
+    print("==== Using environment with the following metadata ====")
+    print(json.dumps(env.serialize(), indent=4))
+    print("")
+
+    # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
+    is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
+
+    # some operations are env-type-specific
+    is_simpler_env = False #EnvUtils.is_simpler_env(env_meta)
+    is_factory_env = False #EnvUtils.is_factory_env(env_meta)
+    
+    # list of all demonstration episodes (sorted in increasing number order)
+    f = h5py.File(args.dataset, "r")
+    if args.filter_key is not None:
+        print("using filter key: {}".format(args.filter_key))
+        demos = [elem.decode("utf-8") for elem in np.array(f["mask/{}".format(args.filter_key)])]
+    else:
+        demos = list(f["data"].keys())
+    inds = np.argsort([int(elem[5:]) for elem in demos])
+    demos = [demos[i] for i in inds]
+
+    # maybe reduce the number of demonstrations to playback
+    if args.n is not None:
+        demos = demos[:args.n]
+
+    for ind in range(len(demos)):
+        # print("Running {} index".format(ind))
+        ep = demos[ind]
+
+        # prepare initial state to reload from
+        states = f["data/{}/states".format(ep)][()]
+        initial_state = dict(states=states[0])
+        if is_robosuite_env:
+            initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
+            initial_state["ep_meta"] = f["data/{}".format(ep)].attrs.get("ep_meta", None)
+            
+        # extract obs, rewards, dones
+        actions = f["data/{}/actions".format(ep)][()]
+        
+        traj, success = extract_trajectory(
+            env=env, 
+            initial_state=initial_state, 
+            states=states, 
+            actions=actions,
+            done_mode=args.done_mode,
+            args=args,
+            add_datagen_info=args.add_datagen_info,
+            debug=True
+        )
+
+        # maybe copy reward or done signal from source file
+        if args.copy_rewards:
+            traj["rewards"] = f["data/{}/rewards".format(ep)][()]
+        if args.copy_dones:
+            traj["dones"] = f["data/{}/dones".format(ep)][()]
+            
+                    
+        ep_grp = f["data/{}".format(ep)]
+
+        states = ep_grp["states"][()]
+        initial_state = dict(states=states[0])
+        if is_robosuite_env:
+            initial_state["model"] = ep_grp.attrs["model_file"]
+            initial_state["ep_meta"] = ep_grp.attrs.get("ep_meta", None)
+
+        
+
+    f.close()
 
 
 if __name__ == "__main__":
@@ -574,7 +735,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_procs",
         type=int,
-        default=5,
+        default=8,
         help="number of parallel processes for extracting image obs",
     )
 
@@ -592,8 +753,44 @@ if __name__ == "__main__":
     parser.add_argument(
         "--randomize_cameras",
         action="store_true"
-
+    )
+    
+    parser.add_argument(
+        "--add_objs",
+        action="store_true"
+    )
+    
+    parser.add_argument(
+        "--interval_left",
+        default=0,
+        type=int,
+        help="only process demos with id >= interval_left"
+    )
+    
+    parser.add_argument(
+        "--interval_right",
+        default=100000,
+        type=int,
+        help="only process demos with id < interval_right"
+    )
+    
+    parser.add_argument(
+        "--global_process_id",
+        default=None
+    )
+    
+    parser.add_argument(
+        "--gpu_id",
+        default=None
     )
 
     args = parser.parse_args()
-    dataset_states_to_obs_multiprocessing(args)
+    
+    if args.gpu_id is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
+    
+    # dataset_states_to_obs_multiprocessing(args)
+    extract_trajectories_debug(args)
+
+
+# python robomimic/scripts/dataset_states_to_obs.py --add_objs --generative_textures --randomize_cameras  --dataset

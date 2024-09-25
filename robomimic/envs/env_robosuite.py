@@ -6,6 +6,7 @@ with metadata present in datasets.
 import json
 import numpy as np
 from copy import deepcopy
+import random
 
 import robosuite
 try:
@@ -17,6 +18,10 @@ import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.lang_utils as LangUtils
 import robomimic.envs.env_base as EB
 from robomimic.macros import LANG_EMB_KEY
+from robosuite.utils.errors import RandomizationError
+from robocasa.models.objects.kitchen_objects import ALL_OBJ_INFOS
+
+import xml.etree.ElementTree as ET
 
 
 class EnvRobosuite(EB.EnvBase):
@@ -135,8 +140,25 @@ class EnvRobosuite(EB.EnvBase):
             # get ep_meta if applicable
             ep_meta = self.env.get_ep_meta()
             self._ep_lang_str = ep_meta.get("lang", "dummy")
+            
+            target_obj_name = None
+            for obj_cfg in ep_meta['object_cfgs']:
+                if obj_cfg['name'] != 'obj':
+                    continue
+                target_obj_name = obj_cfg['info']['mjcf_path'].split('/')[-2]
+            
+            unique_attr = self.env.unique_attr
+            if unique_attr != 'class':
+                unique_attrs = ALL_OBJ_INFOS['obj_infos'][target_obj_name][unique_attr]
+                if type(unique_attrs) != list:
+                    unique_attrs = [unique_attrs]
+                target_describ = unique_attrs[0]
+                target_describ += " object"
+                ori_name = ' '.join(target_obj_name.split('_')[:-1])
+                self._ep_lang_str = self._ep_lang_str.replace(ori_name, target_describ)
         else:
             self._ep_lang_str = "dummy"
+            
 
         # self._ep_lang_emb = LangUtils.get_lang_emb(self._ep_lang_str)
         
@@ -173,15 +195,44 @@ class EnvRobosuite(EB.EnvBase):
             # this reset is necessary.
             # while the call to env.reset_from_xml_string does call reset,
             # that is only a "soft" reset that doesn't actually reload the model.
+            # self.env.objects['obj']._contact_geoms
+            # breakpoint()
+            target_obj_name = None
+            for obj_cfg in ep_meta['object_cfgs']:
+                if obj_cfg['name'] != 'obj':
+                    continue
+                target_obj_name = obj_cfg['info']['mjcf_path'].split('/')[-2]
+            self.env.target_obj_name = target_obj_name
+            
+            self.env.no_placement = True
             self.reset()
+            self.env.no_placement = False
+            # unique_attr = self.env.unique_attr
+            # if unique_attr != 'class':
+            #     unique_attrs = ALL_OBJ_INFOS['obj_infos'][target_obj_name][unique_attr]
+            #     if type(unique_attrs) != list:
+            #         unique_attrs = [unique_attrs]
+            #     target_describ = unique_attrs[0]
+            #     target_describ += " object"
+            #     ori_name = ' '.join(target_obj_name.split('_')[:-1])
+            #     self._ep_lang_str = self._ep_lang_str.replace(ori_name, target_describ)
+            
+            
+            ori_obj_names = [x['name'] for x in ep_meta['object_cfgs']] if 'object_cfgs' in ep_meta else []
+            for obj_name, obj in self.env.objects.items():
+               if obj_name not in ori_obj_names:
+                   state['model'] = self.add_object_model(state['model'], obj.get_xml())
             robosuite_version_id = int(robosuite.__version__.split(".")[1])
             if robosuite_version_id <= 3:
                 from robosuite.utils.mjcf_utils import postprocess_model_xml
                 xml = postprocess_model_xml(state["model"])
             else:
                 # v1.4 and above use the class-based edit_model_xml function
+                # with open('tmp.xml', 'w') as f:
+                #     f.write(state['model'])
+                # breakpoint()
                 xml = self.env.edit_model_xml(state["model"])
-
+            breakpoint()
             self.env.reset_from_xml_string(xml)
             self.env.sim.reset()
             if not self._is_v1:
@@ -191,10 +242,29 @@ class EnvRobosuite(EB.EnvBase):
             if hasattr(self.env, "unset_ep_meta"): # unset the ep meta after reset complete
                 self.env.unset_ep_meta()
         if "states" in state:
+            # breakpoint()
             self.env.sim.set_state_from_flattened(state["states"])
             self.env.sim.forward()
             should_ret = True
-
+        
+        # after loading model and states, sample placements for newly added objects
+        if "model" in state:
+            placed_objects = {}
+            for obj_name in ori_obj_names:
+                obj = self.env.objects[obj_name]
+                qpos = self.env.sim.data.get_joint_qpos(obj.joints[0])
+                placed_objects[obj_name] = (tuple(qpos[:3].tolist()), qpos[3:], obj)
+            placed_objects.update(self.env.fxtr_placements)
+            for try_idx in range(5):
+                try:
+                    object_placements = self.env.placement_initializer.sample(placed_objects=placed_objects)
+                except RandomizationError as e:
+                    print("Randomization error in new object placement. Try #{}".format(try_idx))
+                    continue
+                break
+            for obj_pos, obj_quat, obj in object_placements.values():
+                self.env.sim.data.set_joint_qpos(obj.joints[0], np.concatenate([np.array(obj_pos), np.array(obj_quat)]))
+        
         # update state as needed
         if hasattr(self.env, "update_sites"):
             # older versions of environment had update_sites function
@@ -209,8 +279,37 @@ class EnvRobosuite(EB.EnvBase):
             # only return obs if we've done a forward call - otherwise the observations will be garbage
             return self.get_observation()
         return None
+    
+    def add_object_model(self, model_str, obj_str):
+        obj_root = ET.fromstring(obj_str)
+        obj_asset = obj_root.find("asset")
+        obj_body = obj_root.find("worldbody").find("body").find("body")
 
-    def render(self, mode="human", height=None, width=None, camera_name=None):
+        root = ET.fromstring(model_str)
+        
+        asset = root.find("asset")
+        for texture in obj_asset.findall("texture"):
+            asset.append(texture)
+        for material in obj_asset.findall("material"):
+            asset.append(material)
+        for mesh in obj_asset.findall("mesh"):
+            asset.append(mesh)
+        
+        worldbody = root.find("worldbody")
+        worldbody.append(obj_body)
+            
+        return ET.tostring(root)
+
+    # def remove_object_model(self, model_str, obj_name):
+    #     obj_root = ET.fromstring(obj_str)
+    #     obj_asset = obj_root.find("asset")
+    #     obj_body = obj_root.find("worldbody").find("body").find("body")
+
+    #     root = ET.fromstring(model_str)
+        
+    #     asset = root.find("asset")
+
+    def render(self, mode="human", height=None, width=None, camera_name=None, segmentation=False):
         """
         Render from simulation to either an on-screen window or off-screen to RGB array.
 
@@ -229,7 +328,7 @@ class EnvRobosuite(EB.EnvBase):
             self.env.viewer.set_camera(cam_id)
             return self.env.render()
         elif mode == "rgb_array":
-            return self.env.sim.render(height=height, width=width, camera_name=camera_name)[::-1]
+            return self.env.sim.render(height=height, width=width, camera_name=camera_name, segmentation=segmentation)[::-1]
         else:
             raise NotImplementedError("mode={} is not implemented".format(mode))
 

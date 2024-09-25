@@ -1,0 +1,10 @@
+*.out
+*.pyc
+*.jpg
+tmp.xml
+*.png
+*.mp4
+
+logs/
+*.TXT
+openai/

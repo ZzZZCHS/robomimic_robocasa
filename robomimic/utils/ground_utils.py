@@ -5,9 +5,9 @@ import numpy as np
 from PIL import Image
 import json
 import sys
-sys.path.append('/root/huanghaifeng/robocasa_exps/robomimic/groundingLMM')
+sys.path.append('/ssd/home/groups/smartbot/huanghaifeng/groundingLMM')
 # sys.path.append('/root/huanghaifeng/groundingLMM')
-from spacy_utils import extract_noun_phrases
+# from spacy_utils import extract_noun_phrases
 import argparse
 import sys
 from transformers import AutoTokenizer, CLIPImageProcessor
@@ -28,7 +28,7 @@ import spacy
 class GroundUtils:
     def __init__(self, device='cuda:1'):
         # args
-        self.version = "/root/huanghaifeng/groundingLMM/GLaMM-FullScope"
+        self.version = "/ssd/home/groups/smartbot/huanghaifeng/groundingLMM/GLaMM-FullScope"
         self.vis_save_path = "./vis_output"
         self.precision = "bf16"
         self.image_size = 1024
@@ -54,13 +54,32 @@ class GroundUtils:
         
         self.nlp = spacy.load("en_core_web_sm")
         
-    def extract_noun_phrases(self, text):
-        doc = self.nlp(text)
-        noun_phrases = []
-        for chunk in doc.noun_chunks:
-            if not any(token.pos_ == "PRON" for token in chunk):
-                noun_phrases.append(chunk.text)
-        return noun_phrases
+    # def extract_noun_phrases(self, text):
+    #     doc = self.nlp(text)
+    #     noun_phrases = []
+    #     for chunk in doc.noun_chunks:
+    #         if not any(token.pos_ == "PRON" for token in chunk):
+    #             noun_phrases.append(chunk.text)
+    #     return noun_phrases
+    
+    def extract_direct_object_phrases(self, sentence):
+        # Parse the sentence
+        doc = self.nlp(sentence)
+        
+        # Store the direct object phrases
+        direct_object_phrases = []
+        
+        # Iterate over tokens in the sentence
+        for token in doc:
+            # Check if the token is a direct object and not a pronoun
+            if token.dep_ == "dobj" and token.pos_ != "PRON":
+                # Find the noun chunk that contains this direct object
+                for chunk in doc.noun_chunks:
+                    if token in chunk:
+                        direct_object_phrases.append(chunk.text)
+                        break
+        
+        return direct_object_phrases
         
     # def parse_args(self):
     #     # parser = argparse.ArgumentParser(description="GLaMM Model Demo")
