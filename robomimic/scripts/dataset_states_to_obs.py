@@ -170,8 +170,6 @@ def extract_trajectory(
                 seg_img = []
                 for cam_name in args.camera_names:
                     tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
-                    # tmp_seg[tmp_seg != name2id['obj'] + 1] = 0
-                    # tmp_seg = env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name, segmentation=True)
                     seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
                     seg_rgb[tmp_seg != name2id['obj'] + 1] = 0
                     seg_img.append(seg_rgb)

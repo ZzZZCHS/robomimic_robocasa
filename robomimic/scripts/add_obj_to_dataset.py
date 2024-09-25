@@ -71,7 +71,9 @@ import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.file_utils as FileUtils
 from robomimic.envs.env_base import EnvBase, EnvType
-from robomimic.utils.ground_utils import GroundUtils
+# from robomimic.utils.ground_utils import GroundUtils
+
+from robosuite.demos.demo_segmentation import segmentation_to_rgb
 
 import xml.etree.ElementTree as ET
 from robocasa.models.objects.objects import MJCFObject
@@ -87,20 +89,21 @@ DEFAULT_CAMERAS = {
     EnvType.GYM_TYPE: ValueError("No camera names supported for gym type env!"),
 }
 
-grounding_model = GroundUtils(device="cuda:1")
+# grounding_model = GroundUtils(device="cuda:1")
 
 
 def playback_trajectory_with_env(
     env, 
     initial_state, 
     states, 
+    args,
     actions=None, 
     render=False, 
     video_writer=None, 
     video_skip=5, 
     camera_names=None,
     first=False,
-    ep=""
+    ep="",
 ):
     """
     Helper function to playback a single trajectory using the simulator environment.
@@ -128,12 +131,14 @@ def playback_trajectory_with_env(
     zero_actions = np.zeros(actions.shape[1])
 
     # load the initial state
-    ## this reset call doesn't seem necessary.
-    ## seems ok to remove but haven't fully tested it.
-    ## removing for now
-    # env.reset()
-    # breakpoint()
     ob_dict = env.reset_to(initial_state)
+    
+    if args.write_gt_mask:
+        seg_sensors = {}
+        for cam_name in camera_names:
+            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "instance", "segmentation")
+            seg_sensors[cam_name] = seg_sensor
+        name2id = {inst: i for i, inst in enumerate(list(env.env.model.instances_to_ids.keys()))}
 
     traj_len = states.shape[0]
     action_playback = (actions is not None)
@@ -144,45 +149,11 @@ def playback_trajectory_with_env(
     for i in range(50):
         env.step(zero_actions)
 
-    # if write_video is not None:
-    #     video_img = []
-
-    #     noun_phrases = grounding_model.extract_direct_object_phrases(env._ep_lang_str)
-    #     prompt_template = "Can you segment {}?"
-    #     masked_dict = {}
-    #     masked_img = []
-    #     for cam_name in camera_names:
-    #         # tmp_img = ob_dict[obs_key][0]
-    #         # tmp_img = np.uint8(tmp_img*255).transpose(1, 2, 0)
-    #         tmp_img = env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name)
-    #         video_img.append(tmp_img)
-    #         tmp_masked_img = None
-    #         for tmp_phrase in noun_phrases:
-    #             tmp_prompt = prompt_template.format(tmp_phrase)
-    #             tmp_masked_img = grounding_model.inference(tmp_prompt, tmp_img, tmp_masked_img)
-    #         # tmp_masked_img = (tmp_masked_img.astype(np.float32) / 255.)
-    #         masked_img.append(tmp_masked_img)
-    #         # tmp_masked_img = np.expand_dims(tmp_masked_img, axis=0).repeat(ob_dict[obs_key].shape[0], axis=0)
-    #         # masked_dict[f'masked_{obs_key}'] = tmp_masked_img
-    #     masked_img = np.concatenate(masked_img, axis=1)
-    #     video_img = np.concatenate(video_img, axis=1)
-    #     video_img = np.concatenate([video_img, masked_img], axis=0)
-    #     frame = video_img.copy()
-    #     text1 = env._ep_lang_str
-    #     position1 = (10, 50)
-    #     color = (255, 0, 0)
-    #     font = cv2.FONT_HERSHEY_SIMPLEX
-    #     thickness = 1
-    #     font_scale = 0.8
-    #     cv2.putText(frame, text1, position1, font, font_scale, color, thickness)
-    #     text3 = f"Unique Attribute: {env.env.unique_attr}"
-    #     position3 = (10, 120)
-    #     cv2.putText(frame, text3, position3, font, font_scale, color, thickness)
-    #     video_writer.append_data(frame)
-    # return None, True
     success = False
     outputs = dict(actions_abs=[], rewards=[], dones=[], states=[])
 
+    frames = []
+    
     for i in range(traj_len):
         state = env.get_state()["states"]
         if action_playback:
@@ -210,11 +181,25 @@ def playback_trajectory_with_env(
         
         # video render
         if write_video:
-            if video_count % video_skip == 0:
+            if not args.write_first_frame and video_count % video_skip == 0 or \
+                args.write_first_frame and video_count == 0:
                 video_img = []
                 for cam_name in camera_names:
                     video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
                 video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
+                if args.write_gt_mask:
+                    seg_img = []
+                    for cam_name in camera_names:
+                        tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
+                        seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
+                        seg_rgb[tmp_seg != name2id['obj'] + 1] = 0
+                        seg_rgb[tmp_seg == name2id['obj'] + 1, 0] = 255
+                        seg_rgb[tmp_seg == name2id['obj'] + 1, 1:] = 1
+                        seg_img.append(seg_rgb)
+                    seg_img = np.concatenate(seg_img, axis=1)
+                    # seg_video_img = video_img + seg_img
+                    # seg_video_img[seg_img != 0] /= 2
+                    video_img = np.concatenate([video_img, seg_img], axis=0)
                 frame = video_img.copy()
                 text1 = env._ep_lang_str
                 position1 = (10, 50)
@@ -229,13 +214,18 @@ def playback_trajectory_with_env(
                 text3 = f"Unique Attribute: {env.env.unique_attr}"
                 position3 = (10, 150)
                 cv2.putText(frame, text3, position3, font, font_scale, color, thickness)
-                video_writer.append_data(frame)
+                # video_writer.append_data(frame)
+                frames.append(frame)
             video_count += 1
 
         outputs['rewards'].append(r)
         outputs['dones'].append(done)
         outputs['actions_abs'].append(action_abs)
         outputs['states'].append(state)
+    
+    if write_video:
+        for frame in frames:
+            video_writer.append_data(frame)
     
     # outputs['new_lang'] = env._ep_lang_str
     print("Success:", success)
@@ -244,15 +234,17 @@ def playback_trajectory_with_env(
 
 def playback_dataset(args):
     # some arg checking
-    write_video = False #(args.video_path is not None)
-    if args.video_path is None:
-        args.video_path = args.dataset.split(".hdf5")[0] + "_addobj.mp4"
-        if args.use_actions:
-            args.video_path = args.dataset.split(".hdf5")[0] + "_addobj_use_actions.mp4"
+    write_video = args.write_video #(args.video_path is not None)
+    if args.video_path is None: 
+        addobj_str = "_addobj" if args.add_obj_num > 0 else ""
+        useaction_str = "_use_actions" if args.use_actions else ""
+        args.video_path = args.dataset.split(".hdf5")[0] + addobj_str + useaction_str + ".mp4"
     assert not (args.render and write_video) # either on-screen or video but not both
     
-    tgt_dataset_path = args.dataset.split(".hdf5")[0] + "_addobj.hdf5"
-    if not os.path.exists(tgt_dataset_path):
+    if args.save_new_data:
+        tgt_dataset_path = args.dataset.split(".hdf5")[0] + "_addobj.hdf5"
+        if os.path.exists(tgt_dataset_path):
+            os.remove(tgt_dataset_path)
         shutil.copy(args.dataset, tgt_dataset_path)
 
     # Auto-fill camera rendering info if not specified
@@ -290,7 +282,8 @@ def playback_dataset(args):
         is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
 
     f = h5py.File(args.dataset, "r")
-    tgt_f = h5py.File(tgt_dataset_path, "r+")
+    if args.save_new_data:
+        tgt_f = h5py.File(tgt_dataset_path, "r+")
 
     # list of all demonstration episodes (sorted in increasing number order)
     if args.filter_key is not None:
@@ -308,7 +301,7 @@ def playback_dataset(args):
     if args.n is not None:
         # if not args.dont_shuffle_demos:
         #     random.shuffle(demos)
-        random.shuffle(demos)
+        # random.shuffle(demos)
         demos = demos[:args.n]
 
     # maybe dump video
@@ -316,8 +309,7 @@ def playback_dataset(args):
     if write_video:
         video_writer = imageio.get_writer(args.video_path, fps=20)
         
-    # for ind in range(len(demos)):
-    for ind in range(100):
+    for ind in range(len(demos)):
         ep = demos[ind]
         print("Playing back episode: {}".format(ep))
 
@@ -336,15 +328,17 @@ def playback_dataset(args):
             actions = f["data/{}/actions".format(ep)][()]
             # actions = f["data/{}/actions_abs".format(ep)][()] # absolute actions
         
-        env.env.add_object_num = 10
+        env.env.add_object_num = args.add_obj_num
         success = False
-        for try_idx in range(10):
+        for try_idx in range(3):
             try:
                 initial_state['model'] = copy.copy(ori_model)
                 outputs, success = playback_trajectory_with_env(
                     env=env, 
                     initial_state=initial_state, 
-                    states=states, actions=actions, 
+                    states=states, 
+                    args=args,
+                    actions=actions, 
                     render=args.render, 
                     video_writer=video_writer, 
                     video_skip=args.video_skip,
@@ -357,7 +351,8 @@ def playback_dataset(args):
             except KeyboardInterrupt:
                 print('Control C pressed. Closing files and ending.')
                 f.close()
-                tgt_f.close()
+                if args.save_new_data:
+                    tgt_f.close()
                 if write_video:
                     video_writer.close()
             except Exception as e:
@@ -368,24 +363,26 @@ def playback_dataset(args):
         if not success or outputs is None:
             continue
         
-        new_model = env.env.sim.model.get_xml()
-        new_ep_meta = env.env.get_ep_meta()
-        new_ep_meta['lang'] = env._ep_lang_str
-        new_ep_meta = json.dumps(new_ep_meta, indent=4)
-        
-        print('object number:', len(env.env.object_cfgs))
-        
-        tgt_f["data/{}".format(ep)].attrs["model_file"] = new_model
-        tgt_f["data/{}".format(ep)].attrs["ep_meta"] = new_ep_meta
-        for item_name in ['states', 'rewards', 'dones', 'actions_abs']:
-            item_path = f"data/{ep}/{item_name}"
-            if item_path in tgt_f:
-                del tgt_f[item_path]
-            tgt_f.create_dataset(item_path, data=outputs[item_name])
+        if args.save_new_data:
+            new_model = env.env.sim.model.get_xml()
+            new_ep_meta = env.env.get_ep_meta()
+            new_ep_meta['lang'] = env._ep_lang_str
+            new_ep_meta = json.dumps(new_ep_meta, indent=4)
+            
+            print('object number:', len(env.env.object_cfgs))
+            
+            tgt_f["data/{}".format(ep)].attrs["model_file"] = new_model
+            tgt_f["data/{}".format(ep)].attrs["ep_meta"] = new_ep_meta
+            for item_name in ['states', 'rewards', 'dones', 'actions_abs']:
+                item_path = f"data/{ep}/{item_name}"
+                if item_path in tgt_f:
+                    del tgt_f[item_path]
+                tgt_f.create_dataset(item_path, data=outputs[item_name])
         
 
     f.close()
-    tgt_f.close()
+    if args.save_new_data:
+        tgt_f.close()
     if write_video:
         video_writer.close()
         
@@ -468,6 +465,32 @@ if __name__ == "__main__":
     
     parser.add_argument(
         "--use_actions",
+        action="store_true"
+    )
+    
+    parser.add_argument(
+        "--add_obj_num",
+        default=0,
+        type=int
+    )
+    
+    parser.add_argument(
+        "--write_video",
+        action="store_true"
+    )
+    
+    parser.add_argument(
+        "--save_new_data",
+        action="store_true"
+    )
+    
+    parser.add_argument(
+        "--write_first_frame",
+        action="store_true"
+    )
+    
+    parser.add_argument(
+        "--write_gt_mask",
         action="store_true"
     )
 

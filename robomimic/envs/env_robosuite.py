@@ -232,7 +232,7 @@ class EnvRobosuite(EB.EnvBase):
                 #     f.write(state['model'])
                 # breakpoint()
                 xml = self.env.edit_model_xml(state["model"])
-            breakpoint()
+            # breakpoint()
             self.env.reset_from_xml_string(xml)
             self.env.sim.reset()
             if not self._is_v1:
