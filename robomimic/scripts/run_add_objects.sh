@@ -21,4 +21,4 @@ python robomimic/scripts/add_obj_to_dataset.py \
     --write_video --write_first_frame --write_gt_mask \
     --use_actions \
     --save_new_data \
-    --n 10
+    --n 1
