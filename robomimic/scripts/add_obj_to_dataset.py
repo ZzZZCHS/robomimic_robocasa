@@ -208,12 +208,9 @@ def playback_trajectory_with_env(
                 thickness = 1
                 font_scale = 0.6
                 cv2.putText(frame, text1, position1, font, font_scale, color, thickness)
-                text2 = f"{ep}  Success: {success}"
+                text2 = f"{ep}  Unique Attribute: {env.env.unique_attr}"
                 position2 = (10, 100)
                 cv2.putText(frame, text2, position2, font, font_scale, color, thickness)
-                text3 = f"Unique Attribute: {env.env.unique_attr}"
-                position3 = (10, 150)
-                cv2.putText(frame, text3, position3, font, font_scale, color, thickness)
                 # video_writer.append_data(frame)
                 frames.append(frame)
             video_count += 1
@@ -223,7 +220,7 @@ def playback_trajectory_with_env(
         outputs['actions_abs'].append(action_abs)
         outputs['states'].append(state)
     
-    if write_video:
+    if write_video and success:
         for frame in frames:
             video_writer.append_data(frame)
     

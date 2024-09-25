@@ -192,11 +192,7 @@ class EnvRobosuite(EB.EnvBase):
                 self.env.set_attrs_from_ep_meta(ep_meta)
             elif hasattr(self.env, "set_ep_meta"): # newer versions
                 self.env.set_ep_meta(ep_meta)
-            # this reset is necessary.
-            # while the call to env.reset_from_xml_string does call reset,
-            # that is only a "soft" reset that doesn't actually reload the model.
-            # self.env.objects['obj']._contact_geoms
-            # breakpoint()
+            
             target_obj_name = None
             for obj_cfg in ep_meta['object_cfgs']:
                 if obj_cfg['name'] != 'obj':
@@ -205,18 +201,11 @@ class EnvRobosuite(EB.EnvBase):
             self.env.target_obj_name = target_obj_name
             
             self.env.no_placement = True
+            # this reset is necessary.
+            # while the call to env.reset_from_xml_string does call reset,
+            # that is only a "soft" reset that doesn't actually reload the model.
             self.reset()
             self.env.no_placement = False
-            # unique_attr = self.env.unique_attr
-            # if unique_attr != 'class':
-            #     unique_attrs = ALL_OBJ_INFOS['obj_infos'][target_obj_name][unique_attr]
-            #     if type(unique_attrs) != list:
-            #         unique_attrs = [unique_attrs]
-            #     target_describ = unique_attrs[0]
-            #     target_describ += " object"
-            #     ori_name = ' '.join(target_obj_name.split('_')[:-1])
-            #     self._ep_lang_str = self._ep_lang_str.replace(ori_name, target_describ)
-            
             
             ori_obj_names = [x['name'] for x in ep_meta['object_cfgs']] if 'object_cfgs' in ep_meta else []
             for obj_name, obj in self.env.objects.items():
