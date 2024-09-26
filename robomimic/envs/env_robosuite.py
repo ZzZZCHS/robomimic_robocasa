@@ -141,11 +141,12 @@ class EnvRobosuite(EB.EnvBase):
             ep_meta = self.env.get_ep_meta()
             self._ep_lang_str = ep_meta.get("lang", "dummy")
             
-            target_obj_name = None
-            for obj_cfg in ep_meta['object_cfgs']:
-                if obj_cfg['name'] != 'obj':
-                    continue
-                target_obj_name = obj_cfg['info']['mjcf_path'].split('/')[-2]
+            # target_obj_name = None
+            # for obj_cfg in ep_meta['object_cfgs']:
+            #     if obj_cfg['name'] != 'obj':
+            #         continue
+            #     target_obj_name = obj_cfg['info']['mjcf_path'].split('/')[-2]
+            target_obj_name = self.env.target_obj_name
             
             unique_attr = self.env.unique_attr
             if unique_attr != 'class':

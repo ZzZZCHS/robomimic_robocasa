@@ -1,6 +1,6 @@
 #!/bin/bash
 
-data_path="/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33/demo_gentex_im128_randcams.hdf5"
+data_path="/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33/demo_gentex_im128_randcams_cp.hdf5"
 
 
 # playback原始数据，将成功的数据保存在demo_gentex_im128_randcams_use_actions.mp4中
@@ -21,4 +21,4 @@ python robomimic/scripts/add_obj_to_dataset.py \
     --write_video --write_first_frame --write_gt_mask \
     --use_actions \
     --save_new_data \
-    --n 1
+    --n 100

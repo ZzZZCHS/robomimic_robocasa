@@ -79,10 +79,13 @@ robomimic/scripts/generate_config_templates.py
 robomimic/scripts/generate_paper_configs.py
 robomimic/scripts/get_dataset_info.py
 robomimic/scripts/hyperparam_helper.py
+robomimic/scripts/merge_hdf5_files.py
 robomimic/scripts/playback_dataset.py
 robomimic/scripts/plot_model_predictions.py
 robomimic/scripts/process_data.py
 robomimic/scripts/process_demos.sh
+robomimic/scripts/run_add_objects.sh
+robomimic/scripts/run_dataset_states_to_obs.sh
 robomimic/scripts/run_train.sh
 robomimic/scripts/run_trained_agent.py
 robomimic/scripts/setup_macros.py

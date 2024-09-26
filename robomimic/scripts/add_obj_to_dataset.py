@@ -178,6 +178,7 @@ def playback_trajectory_with_env(
         done = success = env.is_success()["task"]
         done = int(done)
         action_abs = env.base_env.convert_rel_to_abs_action(actions[i])
+        new_distr_names = [f"new_distr_{i}" for i in range(1, env.env.add_object_num+1)]
         
         # video render
         if write_video:
@@ -189,17 +190,28 @@ def playback_trajectory_with_env(
                 video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
                 if args.write_gt_mask:
                     seg_img = []
+                    flag = True
                     for cam_name in camera_names:
                         tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
                         seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
+                        ct = 0
+                        for distr_name in new_distr_names:
+                            if len(tmp_seg == name2id[distr_name] + 1) > 10:
+                                ct += 1
+                        if ct < 0.8 * len(new_distr_names):
+                            flag = False
+                            return None, false
                         seg_rgb[tmp_seg != name2id['obj'] + 1] = 0
                         seg_rgb[tmp_seg == name2id['obj'] + 1, 0] = 255
                         seg_rgb[tmp_seg == name2id['obj'] + 1, 1:] = 1
                         seg_img.append(seg_rgb)
                     seg_img = np.concatenate(seg_img, axis=1)
-                    # seg_video_img = video_img + seg_img
-                    # seg_video_img[seg_img != 0] /= 2
-                    video_img = np.concatenate([video_img, seg_img], axis=0)
+                    seg_video_img = video_img
+                    seg_video_img[seg_img != 0] //= 2
+                    seg_img //= 2
+                    seg_video_img = seg_video_img + seg_img
+                    # breakpoint()
+                    video_img = np.concatenate([video_img, seg_video_img], axis=0)
                 frame = video_img.copy()
                 text1 = env._ep_lang_str
                 position1 = (10, 50)
@@ -232,14 +244,16 @@ def playback_trajectory_with_env(
 def playback_dataset(args):
     # some arg checking
     write_video = args.write_video #(args.video_path is not None)
+    extra_str = ""
+    extra_str += "_addobj" if args.add_obj_num > 0 else ""
+    extra_str += "_use_actions" if args.use_actions else ""
     if args.video_path is None: 
-        addobj_str = "_addobj" if args.add_obj_num > 0 else ""
-        useaction_str = "_use_actions" if args.use_actions else ""
-        args.video_path = args.dataset.split(".hdf5")[0] + addobj_str + useaction_str + ".mp4"
+        args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
     assert not (args.render and write_video) # either on-screen or video but not both
     
     if args.save_new_data:
-        tgt_dataset_path = args.dataset.split(".hdf5")[0] + "_addobj.hdf5"
+        tgt_dataset_path = args.dataset.split(".hdf5")[0] + extra_str + ".hdf5"
+        tgt_data_info_path = args.dataset.split(".hdf5")[0] + extra_str + ".json"
         if os.path.exists(tgt_dataset_path):
             os.remove(tgt_dataset_path)
         shutil.copy(args.dataset, tgt_dataset_path)
@@ -306,6 +320,8 @@ def playback_dataset(args):
     if write_video:
         video_writer = imageio.get_writer(args.video_path, fps=20)
         
+    save_data_info = {}
+    
     for ind in range(len(demos)):
         ep = demos[ind]
         print("Playing back episode: {}".format(ep))
@@ -361,6 +377,12 @@ def playback_dataset(args):
             continue
         
         if args.save_new_data:
+            save_data_info[ep] = {
+                "lang": env._ep_lang_str,
+                "class": ' '.join(env.env.target_obj_name.split('_')[:-1]),
+                "unqiue_attr": env.env.unique_attr
+            }
+            
             new_model = env.env.sim.model.get_xml()
             new_ep_meta = env.env.get_ep_meta()
             new_ep_meta['lang'] = env._ep_lang_str
@@ -375,13 +397,16 @@ def playback_dataset(args):
                 if item_path in tgt_f:
                     del tgt_f[item_path]
                 tgt_f.create_dataset(item_path, data=outputs[item_name])
-        
+    
 
     f.close()
     if args.save_new_data:
         tgt_f.close()
     if write_video:
         video_writer.close()
+    
+    with open(tgt_data_info_path, 'w') as f:
+        json.dump(save_data_info, f, indent=4)
         
 
 if __name__ == "__main__":
