@@ -225,15 +225,13 @@ def playback_trajectory_with_env(
             position2 = (10, 100)
             cv2.putText(frame, text2, position2, font, font_scale, color, thickness)
             frames.append(frame)
-        video_count += 1
+            video_count += 1
 
         outputs['rewards'].append(r)
         outputs['dones'].append(done)
         outputs['actions_abs'].append(action_abs)
         outputs['states'].append(state)
     
-    # breakpoint()
-    print(len(frames))
     # if write_video and success:
     #     for frame in frames:
     #         video_writer.append_data(frame)
@@ -254,14 +252,264 @@ def playback_trajectory_with_env(
     return outputs, success
 
 
+def retrieve_new_index(process_num, current_work_array, work_queue, lock):
+    with lock:
+        if work_queue.empty():
+            return -1
+        try:
+            tmp = work_queue.get(False)
+            current_work_array[process_num] = tmp
+            return tmp
+        except queue.Empty:
+            return -1
+
+
+def playback_demos_process(process_num, current_work_array, work_queue, lock, args, num_finished, mul_queue):
+    dummy_spec = dict(
+        obs=dict(
+                low_dim=["robot0_eef_pos"],
+                rgb=[],
+            ),
+    )
+    ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs=dummy_spec)
+
+    env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
+    # env_meta["env_kwargs"]["controller_configs"]["control_delta"] = False # absolute action space
+    env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=args.render, render_offscreen=args.write_video)
+
+    # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
+    is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
+    
+    f = h5py.File(args.dataset, "r")
+    
+    if args.filter_key is not None:
+        print("using filter key: {}".format(args.filter_key))
+        demos = [elem.decode("utf-8") for elem in np.array(f["mask/{}".format(args.filter_key)])]
+    elif "data" in f.keys():
+        demos = list(f["data"].keys())
+    else:
+        demos = None
+
+    inds = np.argsort([int(elem[5:]) for elem in demos])
+    demos = [demos[i] for i in inds]
+    
+    # maybe reduce the number of demonstrations to playback
+    if args.n is not None:
+        demos = demos[:args.n]
+    
+    ind = retrieve_new_index(process_num, current_work_array, work_queue, lock)
+    while (not work_queue.empty()) and (ind != -1):
+        ep = demos[ind]
+
+        # prepare initial state to reload from
+        states = f["data/{}/states".format(ep)][()]
+        initial_state = dict(states=states[0])
+        if is_robosuite_env:
+            initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
+            initial_state["ep_meta"] = f["data/{}".format(ep)].attrs.get("ep_meta", None)
+        
+        ori_model = copy.copy(initial_state['model'])
+        
+        # supply actions if using open-loop action playback
+        actions = None
+        if args.use_actions:
+            actions = f["data/{}/actions".format(ep)][()]
+            # actions = f["data/{}/actions_abs".format(ep)][()] # absolute actions
+        
+        env.env.add_object_num = args.add_obj_num
+        success = False
+        for try_idx in range(3):
+            try:
+                initial_state['model'] = copy.copy(ori_model)
+                outputs, success = playback_trajectory_with_env(
+                    env=env, 
+                    initial_state=initial_state, 
+                    states=states, 
+                    args=args,
+                    actions=actions, 
+                    render=args.render, 
+                    video_writer=video_writer, 
+                    video_skip=args.video_skip,
+                    camera_names=args.render_image_names,
+                    first=args.first,
+                    ep=ep
+                )
+                if success:
+                    break
+            except KeyboardInterrupt:
+                print('Control C pressed. Closing files and ending.')
+            except Exception as e:
+                # print(traceback.format_exc())
+                pass
+        mul_queue.put([ep, outputs, success])
+        ind = retrieve_new_index(process_num, current_work_array, work_queue, lock)
+    
+    num_finished.value += 1
+
+
+def write_new_data_process(args, tgt_dataset_path, total_samples, total_run, num_process, mul_queue, demo_keys):
+    video_writer = None
+    if args.write_video:
+        video_writer = imageio.get_writer(args.video_path, fps=20)
+    tgt_f = h5py.File(tgt_dataset_path, "r+")
+    start_time = time.time()
+    num_processed = 0
+    success_num = 0
+    
+    try:
+        while((total_run.value < num_process) or not mul_queue.empty()):
+            if mul_queue.empty():
+                continue
+            num_processed = num_processed + 1
+            ep, outputs, success = mul_queue.get()
+            demo_keys.remove(ep)
+            
+            if not success or outputs is None:
+                if f"data/{ep}" in tgt_f:
+                    del tgt_f[f"data/{ep}"]
+                continue
+
+            success_num += 1
+            
+            save_data_info[ep] = {
+                "lang": outputs["lang"],
+                "class": outputs["class"],
+                "unique_attr": outputs["unique_attr"],
+                "target_phrase": outputs["target_phrase"],
+                "images": outputs["images"],
+                "masks": outputs["masks"]
+            }
+            
+            if args.write_video:
+                for frame in outputs["frames"]:
+                    video_writer.append_data(frame)
+            
+            new_model = outputs["new_model"]
+            new_ep_meta = outputs["new_ep_meta"]
+            new_ep_meta["lang"] = outputs["lang"]
+            new_ep_meta = json.dumps(new_ep_meta, indent=4)
+            
+            print('object number:', len(env.env.object_cfgs))
+            
+            tgt_f["data/{}".format(ep)].attrs["model_file"] = new_model
+            tgt_f["data/{}".format(ep)].attrs["ep_meta"] = new_ep_meta
+            for item_name in ['states', 'rewards', 'dones', 'actions_abs']:
+                item_path = f"data/{ep}/{item_name}"
+                if item_path in tgt_f:
+                    del tgt_f[item_path]
+                tgt_f.create_dataset(item_path, data=outputs[item_name])
+            
+            total_samples.value += len(outputs["action_abs"])
+
+            print("ep {}: wrote {} transitions to group {} at process {} with {} finished. Datagen rate: {:.2f} sec/demo".format(
+                num_processed, ep_data_grp.attrs["num_samples"], ep, process_num, total_run.value, (time.time() - start_time) / num_processed
+            ))
+    except KeyboardInterrupt:
+        print("Control C pressed. Closing File and ending \n\n\n\n")
+    
+    for left_ep in demo_keys:
+        if f"data/{left_ep}" in tgt_f:
+            del tgt_f[f"data/{left_ep}"]
+    tgt_f["data"].attrs["total"] = total_samples.value
+    
+    tgt_f.close()
+    if args.write_video:
+        video_writer.close()
+    
+    print(f"success: {success_num}/{num_processed}")
+
+
+def playback_dataset_multiprocessing(args):
+    # some arg checking
+    write_video = args.write_video #(args.video_path is not None)
+    extra_str = ""
+    extra_str += "_addobj" if args.add_obj_num > 0 else ""
+    extra_str += "_use_actions" if args.use_actions else ""
+    if args.video_path is None: 
+        args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
+    assert not (args.render and write_video) # either on-screen or video but not both
+    
+    if args.save_new_data:
+        tgt_dataset_path = args.dataset.split(".hdf5")[0] + extra_str + ".hdf5"
+        tgt_data_info_path = args.dataset.split(".hdf5")[0] + extra_str + ".pt"
+        if os.path.exists(tgt_dataset_path):
+            os.remove(tgt_dataset_path)
+        shutil.copy(args.dataset, tgt_dataset_path)
+
+    # Auto-fill camera rendering info if not specified
+    if args.render_image_names is None:
+        # We fill in the automatic values
+        env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
+        env_type = EnvUtils.get_env_type(env_meta=env_meta)
+        args.render_image_names = DEFAULT_CAMERAS[env_type]
+
+    if args.render:
+        # on-screen rendering can only support one camera
+        assert len(args.render_image_names) == 1
+
+
+    f = h5py.File(args.dataset, "r")
+
+    # list of all demonstration episodes (sorted in increasing number order)
+    if args.filter_key is not None:
+        print("using filter key: {}".format(args.filter_key))
+        demos = [elem.decode("utf-8") for elem in np.array(f["mask/{}".format(args.filter_key)])]
+    elif "data" in f.keys():
+        demos = list(f["data"].keys())
+    else:
+        demos = None
+
+    inds = np.argsort([int(elem[5:]) for elem in demos])
+    demos = [demos[i] for i in inds]
+    left_demos = copy.copy(demos)
+    
+    # maybe reduce the number of demonstrations to playback
+    if args.n is not None:
+        demos = demos[:args.n]
+    
+    num_demos = len(demos)
+    f.close()
+    
+    num_process = args.num_process
+    index = multiprocessing.Value('i', 0)
+    lock = multiprocessing.Lock()
+    total_samples_shared = multiprocessing.Value('i', 0)
+    num_finished = multiprocessing.Value('i', 0)
+    mul_queue = multiprocessing.Queue()
+    work_queue = multiprocessing.Queue()
+    for index in range(num_demos):
+        work_queue.put(index)
+    current_work_array = multiprocessing.Array('i', num_process)
+    processes = []
+    for i in range(num_process):
+        process = multiprocessing.Process(target=playback_demos_process, args=(i, current_work_array, work_queue, lock, args, num_finished, mul_queue))
+        processes.append(process)
+    
+    if args.save_new_data:
+        process_write = multiprocessing.Process(target=write_new_data_process, args=(args, tgt_dataset_path, total_samples_shared, num_finished, num_process, mul_queue, left_demos))
+        processes.append(process_write)
+    
+    for process in processes:
+        process.start()
+    
+    for process in processes:
+        process.join()
+    
+    print("Finished Multiprocessing")
+        
+    save_data_info = {}
+    
+    
+    torch.save(save_data_info, tgt_data_info_path)
+
+
 def playback_dataset(args):
     # some arg checking
     write_video = args.write_video #(args.video_path is not None)
     extra_str = ""
     extra_str += "_addobj" if args.add_obj_num > 0 else ""
     extra_str += "_use_actions" if args.use_actions else ""
-    extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
-    if write_video and args.video_path is None: 
+    if args.video_path is None: 
         args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
     assert not (args.render and write_video) # either on-screen or video but not both
     
@@ -301,7 +549,7 @@ def playback_dataset(args):
 
         env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
         # env_meta["env_kwargs"]["controller_configs"]["control_delta"] = False # absolute action space
-        env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=args.render, render_offscreen=True)
+        env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=args.render, render_offscreen=write_video)
 
         # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
         is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
@@ -309,8 +557,6 @@ def playback_dataset(args):
     f = h5py.File(args.dataset, "r")
     if args.save_new_data:
         tgt_f = h5py.File(tgt_dataset_path, "r+")
-    else:
-        tgt_f = None
 
     # list of all demonstration episodes (sorted in increasing number order)
     if args.filter_key is not None:
@@ -332,7 +578,7 @@ def playback_dataset(args):
         # random.shuffle(demos)
         demos = demos[:args.n]
     
-    demos = demos[args.interval_left:args.interval_right]
+    f.close()
 
     # maybe dump video
     video_writer = None
@@ -348,18 +594,18 @@ def playback_dataset(args):
         print("Playing back episode: {}".format(ep))
 
         # prepare initial state to reload from
-        states = f["data/{}/states".format(ep)][()]
+        states = tgt_f["data/{}/states".format(ep)][()]
         initial_state = dict(states=states[0])
         if is_robosuite_env:
-            initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
-            initial_state["ep_meta"] = f["data/{}".format(ep)].attrs.get("ep_meta", None)
+            initial_state["model"] = tgt_f["data/{}".format(ep)].attrs["model_file"]
+            initial_state["ep_meta"] = tgt_f["data/{}".format(ep)].attrs.get("ep_meta", None)
         
         ori_model = copy.copy(initial_state['model'])
         
         # supply actions if using open-loop action playback
         actions = None
         if args.use_actions:
-            actions = f["data/{}/actions".format(ep)][()]
+            actions = tgt_f["data/{}/actions".format(ep)][()]
             # actions = f["data/{}/actions_abs".format(ep)][()] # absolute actions
         
         env.env.add_object_num = args.add_obj_num
@@ -389,22 +635,16 @@ def playback_dataset(args):
                     tgt_f.close()
                 if write_video:
                     video_writer.close()
-                return
             except Exception as e:
                 # print("try idx:", try_idx)
-                # print(traceback.format_exc())
-                # print(e)
+                print(traceback.format_exc())
+                print(e)
                 print("fail to reset env, try again...")
-                pass
             
         if not success or outputs is None:
-            if tgt_f and f"data/{ep}" in tgt_f:
+            if f"data/{ep}" in tgt_f:
                 del tgt_f[f"data/{ep}"]
             continue
-
-        if write_video:
-            for frame in outputs["frames"]:
-                video_writer.append_data(frame)
 
         success_num += 1
         
@@ -435,13 +675,12 @@ def playback_dataset(args):
     
     print(f"success: {success_num}/{len(demos)}")
     
-    f.close()
+    for ep in left_demos:
+        if f"data/{ep}" in tgt_f:
+            del tgt_f[f"data/{ep}"]
+
     if args.save_new_data:
-        for ep in left_demos:
-            if f"data/{ep}" in tgt_f:
-                del tgt_f[f"data/{ep}"]
         tgt_f.close()
-        
     if write_video:
         video_writer.close()
     
@@ -563,24 +802,21 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "--interval_left",
-        default=0,
-        type=int,
-        help="only process demos with id >= interval_left"
+        "--multiprocessing",
+        action="store_true",
+        help="use multiprocessing to process demos"
     )
     
     parser.add_argument(
-        "--interval_right",
-        default=100000,
+        "--num_process",
+        default=8,
         type=int,
-        help="only process demos with id < interval_right"
-    )
-    
-    parser.add_argument(
-        "--global_process_id",
-        default=None
+        help="number of parallel processes"
     )
 
     args = parser.parse_args()
-    playback_dataset(args)
+    if args.multiprocessing:
+        playback_dataset_multiprocessing(args)
+    else:
+        playback_dataset(args)
     

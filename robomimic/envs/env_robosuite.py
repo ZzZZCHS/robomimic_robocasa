@@ -99,6 +99,7 @@ class EnvRobosuite(EB.EnvBase):
         self.env = robosuite.make(self._env_name, **kwargs)
         self.base_env = self.env # for mimicgen
         self.env_lang = env_lang
+        self.target_phrase = ""
 
         if self._is_v1:
             # Make sure joint position observations and eef vel observations are active
@@ -153,10 +154,13 @@ class EnvRobosuite(EB.EnvBase):
                 unique_attrs = ALL_OBJ_INFOS['obj_infos'][target_obj_name][unique_attr]
                 if type(unique_attrs) != list:
                     unique_attrs = [unique_attrs]
-                target_describ = unique_attrs[0]
-                target_describ += " object"
+                target_phrase = unique_attrs[0]
+                target_phrase += " object"
                 ori_name = ' '.join(target_obj_name.split('_')[:-1])
-                self._ep_lang_str = self._ep_lang_str.replace(ori_name, target_describ)
+                self._ep_lang_str = self._ep_lang_str.replace(ori_name, target_phrase)
+                self.target_phrase = target_phrase
+            else:
+                self.target_phrase = ' '.join(target_obj_name.split('_')[:-1])
         else:
             self._ep_lang_str = "dummy"
             
@@ -245,11 +249,11 @@ class EnvRobosuite(EB.EnvBase):
                 qpos = self.env.sim.data.get_joint_qpos(obj.joints[0])
                 placed_objects[obj_name] = (tuple(qpos[:3].tolist()), qpos[3:], obj)
             placed_objects.update(self.env.fxtr_placements)
-            for try_idx in range(5):
+            for try_idx in range(2):
                 try:
                     object_placements = self.env.placement_initializer.sample(placed_objects=placed_objects)
                 except RandomizationError as e:
-                    print("Randomization error in new object placement. Try #{}".format(try_idx))
+                    # print("Randomization error in new object placement. Try #{}".format(try_idx))
                     continue
                 break
             for obj_pos, obj_quat, obj in object_placements.values():
