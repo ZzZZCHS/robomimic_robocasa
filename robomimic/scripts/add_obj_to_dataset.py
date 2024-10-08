@@ -145,6 +145,8 @@ def playback_trajectory_with_env(
             seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "instance", "segmentation")
             seg_sensors[cam_name] = seg_sensor
         name2id = {inst: i for i, inst in enumerate(list(env.env.model.instances_to_ids.keys()))}
+        target_obj_str = env.env.target_obj_str
+        target_place_str = env.env.target_place_str
 
     traj_len = states.shape[0]
     action_playback = (actions is not None)
@@ -200,17 +202,16 @@ def playback_trajectory_with_env(
                     if ct < 0.8 * len(new_distr_names):
                         flag = False
                         return None, False
-                    seg_rgb[tmp_seg != name2id['obj'] + 1] = 0
-                    seg_rgb[tmp_seg == name2id['obj'] + 1, 0] = 255
-                    seg_rgb[tmp_seg == name2id['obj'] + 1, 1:] = 1
+                    seg_rgb[:] = 0
+                    seg_rgb[tmp_seg == name2id[target_obj_str] + 1, 0] = 255
+                    if target_place_str:
+                        seg_rgb[tmp_seg == name2id[target_place_str] + 1, 2] = 255
                     seg_img.append(seg_rgb)
                 if len(save_masks) == 0:
                     save_masks.extend(seg_img)
                 seg_img = np.concatenate(seg_img, axis=1)
                 seg_video_img = video_img
-                seg_video_img[seg_img != 0] //= 2
-                seg_img //= 2
-                seg_video_img = seg_video_img + seg_img
+                seg_video_img = seg_video_img // 3 + seg_img // 3 * 2
                 # breakpoint()
                 video_img = np.concatenate([video_img, seg_video_img], axis=0)
             frame = video_img.copy()
@@ -243,9 +244,9 @@ def playback_trajectory_with_env(
         "masks": save_masks,
         "ep": ep,
         "lang": env._ep_lang_str,
-        "class": ' '.join(env.env.target_obj_name.split('_')[:-1]),
         "unique_attr": env.env.unique_attr,
-        "target_phrase": env.target_phrase,
+        "target_obj_phrase": env.env.target_obj_phrase,
+        "target_place_phrase": env.env.target_place_phrase,
         "new_model": env.env.sim.model.get_xml(),
         "new_ep_meta": env.env.get_ep_meta(),
         "frames": frames
@@ -305,7 +306,7 @@ def playback_dataset(args):
 
         # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
         is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
-
+    
     f = h5py.File(args.dataset, "r")
     if args.save_new_data:
         tgt_f = h5py.File(tgt_dataset_path, "r+")
@@ -395,7 +396,6 @@ def playback_dataset(args):
                 # print(traceback.format_exc())
                 # print(e)
                 print("fail to reset env, try again...")
-                pass
             
         if not success or outputs is None:
             if tgt_f and f"data/{ep}" in tgt_f:
@@ -411,9 +411,9 @@ def playback_dataset(args):
         if args.save_new_data:
             save_data_info[ep] = {
                 "lang": outputs["lang"],
-                "class": outputs["class"],
                 "unique_attr": outputs["unique_attr"],
-                "target_phrase": outputs["target_phrase"],
+                "target_obj_phrase": outputs["target_obj_phrase"],
+                "target_place_phrase": outputs["target_place_phrase"],
                 "images": outputs["images"],
                 "masks": outputs["masks"]
             }
@@ -424,6 +424,7 @@ def playback_dataset(args):
             new_ep_meta = json.dumps(new_ep_meta, indent=4)
             
             print('object number:', len(env.env.object_cfgs))
+            print('instruction:', outputs['lang'])
             
             tgt_f["data/{}".format(ep)].attrs["model_file"] = new_model
             tgt_f["data/{}".format(ep)].attrs["ep_meta"] = new_ep_meta

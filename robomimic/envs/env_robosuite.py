@@ -142,25 +142,16 @@ class EnvRobosuite(EB.EnvBase):
             ep_meta = self.env.get_ep_meta()
             self._ep_lang_str = ep_meta.get("lang", "dummy")
             
-            # target_obj_name = None
-            # for obj_cfg in ep_meta['object_cfgs']:
-            #     if obj_cfg['name'] != 'obj':
-            #         continue
-            #     target_obj_name = obj_cfg['info']['mjcf_path'].split('/')[-2]
             target_obj_name = self.env.target_obj_name
-            
             unique_attr = self.env.unique_attr
-            if unique_attr != 'class':
+            if unique_attr != 'class' and target_obj_name in ALL_OBJ_INFOS['obj_infos']:
                 unique_attrs = ALL_OBJ_INFOS['obj_infos'][target_obj_name][unique_attr]
                 if type(unique_attrs) != list:
                     unique_attrs = [unique_attrs]
                 target_phrase = unique_attrs[0]
                 target_phrase += " object"
-                ori_name = ' '.join(target_obj_name.split('_')[:-1])
-                self._ep_lang_str = self._ep_lang_str.replace(ori_name, target_phrase)
-                self.target_phrase = target_phrase
-            else:
-                self.target_phrase = ' '.join(target_obj_name.split('_')[:-1])
+                self._ep_lang_str = self._ep_lang_str.replace(self.env.target_obj_phrase, target_phrase)
+                self.env.target_obj_phrase = target_phrase
         else:
             self._ep_lang_str = "dummy"
             
@@ -200,7 +191,7 @@ class EnvRobosuite(EB.EnvBase):
             
             target_obj_name = None
             for obj_cfg in ep_meta['object_cfgs']:
-                if obj_cfg['name'] != 'obj':
+                if obj_cfg['name'] != self.env.target_obj_str:
                     continue
                 target_obj_name = obj_cfg['info']['mjcf_path'].split('/')[-2]
             self.env.target_obj_name = target_obj_name
