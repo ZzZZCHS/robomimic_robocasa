@@ -200,6 +200,7 @@ def playback_trajectory_with_env(
                     if ct < 0.8 * len(new_distr_names):
                         flag = False
                         return None, False
+                    # todo:
                     seg_rgb[tmp_seg != name2id['obj'] + 1] = 0
                     seg_rgb[tmp_seg == name2id['obj'] + 1, 0] = 255
                     seg_rgb[tmp_seg == name2id['obj'] + 1, 1:] = 1
@@ -391,9 +392,9 @@ def playback_dataset(args):
                     video_writer.close()
                 return
             except Exception as e:
-                # print("try idx:", try_idx)
-                # print(traceback.format_exc())
-                # print(e)
+                print("try idx:", try_idx)
+                print(traceback.format_exc())
+                print(e)
                 print("fail to reset env, try again...")
                 pass
             
