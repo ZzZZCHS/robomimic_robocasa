@@ -5,7 +5,7 @@
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/mg/2024-07-12-04-33-29/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/mg/2024-05-04-22-14-06_and_2024-05-07-07-40-17/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams.hdf5"
-data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToMicrowave/mg/2024-05-04-22-13-21_and_2024-05-07-07-41-17/demo_gentex_im128_randcams.hdf5"
+# data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToMicrowave/mg/2024-05-04-22-13-21_and_2024-05-07-07-41-17/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPMicrowaveToCounter/mg/2024-05-04-22-14-26_and_2024-05-07-07-41-42/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToStove/mg/2024-05-04-22-14-20/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/mg/2024-05-04-22-14-40/demo_gentex_im128_randcams.hdf5"
@@ -29,7 +29,7 @@ data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/dataset
 
 # stove
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_stove/TurnOnStove/mg/2024-05-08-09-20-31/demo_gentex_im128_randcams.hdf5"
-# data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_stove/TurnOffStove/mg/2024-05-08-09-20-45/demo_gentex_im128_randcams.hdf5"
+data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_stove/TurnOffStove/mg/2024-05-08-09-20-45/demo_gentex_im128_randcams.hdf5"
 
 # microwave
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_microwave/TurnOnMicrowave/mg/2024-05-04-22-40-00/demo_gentex_im128_randcams.hdf5"
@@ -38,6 +38,9 @@ data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/dataset
 # coffee
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeeSetupMug/mg/2024-05-04-22-22-13_and_2024-05-08-05-52-13/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/mg/2024-05-04-22-21-50/demo_gentex_im128_randcams.hdf5"
+
+# button
+# data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeePressButton/mg/2024-05-04-22-21-32/demo_gentex_im128_randcams.hdf5"
 
 # playback原始数据，将成功的数据保存在demo_gentex_im128_randcams_use_actions.mp4中
 # 原始数据有3000条，--n参数控制playback多少条数据
@@ -53,8 +56,8 @@ data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/dataset
 # --add_obj_num参数控制新加入的物体数量，--n参数控制数据条数
 python robomimic/scripts/add_obj_to_dataset.py \
     --dataset ${data_path} \
-    --add_obj_num 5 \
+    --add_obj_num 10 \
     --write_video --write_first_frame --write_gt_mask \
     --use_actions \
     --save_new_data \
-    --n 10
+    --n 5
