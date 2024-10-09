@@ -67,6 +67,7 @@ import glob
 import shutil
 import cv2
 import multiprocessing
+from PIL import Image
 
 import robomimic
 import robomimic.utils.obs_utils as ObsUtils
@@ -140,12 +141,16 @@ def playback_trajectory_with_env(
     save_masks = []
     
     if args.write_gt_mask:
+        geom2body_id_mapping = {geom_id: body_id for geom_id, body_id in enumerate(env.env.sim.model.geom_bodyid)}
         seg_sensors = {}
         for cam_name in camera_names:
-            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "instance", "segmentation")
+            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "element", "segmentation", custom_mapping=geom2body_id_mapping)
             seg_sensors[cam_name] = seg_sensor
-        name2id = {inst: i for i, inst in enumerate(list(env.env.model.instances_to_ids.keys()))}
+        # name2id = {inst: i for i, inst in enumerate(list(env.env.model.instances_to_ids.keys()))}
+        name2id = env.env.sim.model._body_name2id
         target_obj_str = env.env.target_obj_str
+        if target_obj_str == "obj":
+            target_obj_str += "_main"
         target_place_str = env.env.target_place_str
 
     traj_len = states.shape[0]
@@ -178,7 +183,7 @@ def playback_trajectory_with_env(
         done = success = env.is_success()["task"]
         done = int(done)
         action_abs = env.base_env.convert_rel_to_abs_action(actions[i])
-        new_distr_names = [f"new_distr_{i}" for i in range(1, env.env.add_object_num+1)]
+        new_distr_names = [f"new_distr_{i}_main" for i in range(1, env.env.add_object_num+1)]
         
         # video render
         if not args.write_first_frame and video_count % video_skip == 0 or \
@@ -191,17 +196,11 @@ def playback_trajectory_with_env(
             video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
             if args.write_gt_mask:
                 seg_img = []
-                flag = True
                 for cam_name in camera_names:
                     tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
                     seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
-                    ct = 0
-                    for distr_name in new_distr_names:
-                        if len(tmp_seg == name2id[distr_name] + 1) > 10:
-                            ct += 1
-                    if ct < 0.8 * len(new_distr_names):
-                        flag = False
-                        return None, False
+                    # print([x for x in name2id.keys() if target_obj_str in x])
+                    # breakpoint()
                     seg_rgb[:] = 0
                     seg_rgb[tmp_seg == name2id[target_obj_str] + 1, 0] = 255
                     if target_place_str:
@@ -393,8 +392,8 @@ def playback_dataset(args):
                 return
             except Exception as e:
                 # print("try idx:", try_idx)
-                # print(traceback.format_exc())
-                # print(e)
+                print(traceback.format_exc())
+                print(e)
                 print("fail to reset env, try again...")
             
         if not success or outputs is None:

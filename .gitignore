@@ -11,3 +11,4 @@ openai/
 robomimic/envs/__pycache__/*
 robomimic.egg-info/
 robomimic/envs/__pycache__/env_robosuite.cpython-39.pyc
+tmp.txt
