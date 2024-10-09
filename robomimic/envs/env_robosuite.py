@@ -234,18 +234,26 @@ class EnvRobosuite(EB.EnvBase):
         
         # after loading model and states, sample placements for newly added objects
         if "model" in state:
-            placed_objects = {}
+            # breakpoint()
+            placed_objects = {} # object already placed
+            # Retrieve the original object
             for obj_name in ori_obj_names:
                 obj = self.env.objects[obj_name]
                 qpos = self.env.sim.data.get_joint_qpos(obj.joints[0])
+                # breakpoint()
+                if obj_name == "obj_container": # to avoid container's influence when training
+                    qpos[0] += 0.5
+                    print(f"Change obj_container's position to {qpos}.")
                 placed_objects[obj_name] = (tuple(qpos[:3].tolist()), qpos[3:], obj)
+            # Add fixtures in the environment
             placed_objects.update(self.env.fxtr_placements)
             object_placements = None
             for try_idx in range(2):
                 try:
+                    # object tend to be placed
                     object_placements = self.env.placement_initializer.sample(placed_objects=placed_objects)
                 except RandomizationError as e:
-                    # print("Randomization error in new object placement. Try #{}".format(try_idx))
+                    print("Randomization error in new object placement. Try #{}".format(try_idx))
                     continue
                 break
             if object_placements is None:

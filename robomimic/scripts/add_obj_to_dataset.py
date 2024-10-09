@@ -391,7 +391,7 @@ def playback_dataset(args):
                     video_writer.close()
                 return
             except Exception as e:
-                # print("try idx:", try_idx)
+                print("try idx:", try_idx)
                 print(traceback.format_exc())
                 print(e)
                 print("fail to reset env, try again...")
