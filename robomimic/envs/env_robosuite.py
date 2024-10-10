@@ -250,6 +250,7 @@ class EnvRobosuite(EB.EnvBase):
                 placed_objects[obj_name] = (tuple(qpos[:3].tolist()), qpos[3:], obj)
             # Add fixtures in the environment
             placed_objects.update(self.env.fxtr_placements)
+            object_placements = None
             for try_idx in range(2):
                 try:
                     # object tend to be placed
@@ -258,6 +259,8 @@ class EnvRobosuite(EB.EnvBase):
                     print("Randomization error in new object placement. Try #{}".format(try_idx))
                     continue
                 break
+            if object_placements is None:
+                raise RandomizationError
             for obj_pos, obj_quat, obj in object_placements.values():
                 self.env.sim.data.set_joint_qpos(obj.joints[0], np.concatenate([np.array(obj_pos), np.array(obj_quat)]))
         
