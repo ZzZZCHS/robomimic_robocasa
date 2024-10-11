@@ -20,6 +20,7 @@ import robomimic.envs.env_base as EB
 from robomimic.macros import LANG_EMB_KEY
 from robosuite.utils.errors import RandomizationError
 from robocasa.models.objects.kitchen_objects import ALL_OBJ_INFOS
+from robocasa.environments.kitchen.single_stage.kitchen_pnp import PnPCounterToMicrowave, PnPCounterToStove, PnPMicrowaveToCounter
 
 import xml.etree.ElementTree as ET
 
@@ -241,7 +242,9 @@ class EnvRobosuite(EB.EnvBase):
                 obj = self.env.objects[obj_name]
                 qpos = self.env.sim.data.get_joint_qpos(obj.joints[0])
                 # breakpoint()
-                if obj_name == "obj_container": # to avoid container's influence when training
+                remove_classes = (PnPCounterToMicrowave, PnPCounterToStove, PnPMicrowaveToCounter)
+                if obj_name == "obj_container" and isinstance(self.env, remove_classes):
+                    # to avoid container's influence when training for PnPCounterToMicrowave\PnPCounterToStove\PnPMicrowaveToCounter, but not PnPStoveToCounter
                     qpos[0] += 0.5
                     print(f"Change obj_container's position to {qpos}.")
                 placed_objects[obj_name] = (tuple(qpos[:3].tolist()), qpos[3:], obj)
