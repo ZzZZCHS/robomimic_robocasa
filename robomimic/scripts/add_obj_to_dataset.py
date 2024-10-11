@@ -26,7 +26,7 @@ Args:
 
     video_skip (int): render frames to a video every @video_skip steps
 
-    render_image_names (str or [str]): camera name(s) / image observation(s) to 
+    camera_names (str or [str]): camera name(s) / image observation(s) to 
         use for rendering on-screen or to video
 
     first (bool): if flag is provided, use first frame of each episode for playback
@@ -36,22 +36,22 @@ Example usage below:
 
     # force simulation states one by one, and render agentview and wrist view cameras to video
     python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --render_image_names agentview robot0_eye_in_hand \
+        --camera_names agentview robot0_eye_in_hand \
         --video_path /tmp/playback_dataset.mp4
 
     # playback the actions in the dataset, and render agentview camera during playback to video
     python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --use-actions --render_image_names agentview \
+        --use-actions --camera_names agentview \
         --video_path /tmp/playback_dataset_with_actions.mp4
 
     # use the observations stored in the dataset to render videos of the dataset trajectories
     python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --use-obs --render_image_names agentview_image \
+        --use-obs --camera_names agentview_image \
         --video_path /tmp/obs_trajectory.mp4
 
     # visualize initial states in the demonstration data
     python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --first --render_image_names agentview \
+        --first --camera_names agentview \
         --video_path /tmp/dataset_task_inits.mp4
 """
 
@@ -68,6 +68,7 @@ import shutil
 import cv2
 import multiprocessing
 from PIL import Image
+from collections import defaultdict
 
 import robomimic
 import robomimic.utils.obs_utils as ObsUtils
@@ -77,6 +78,8 @@ from robomimic.envs.env_base import EnvBase, EnvType
 # from robomimic.utils.ground_utils import GroundUtils
 
 from robosuite.demos.demo_segmentation import segmentation_to_rgb
+from robomimic.scripts.conversion.extract_action_dict import extract_action_dict
+from robomimic.scripts.filter_dataset_size import filter_dataset_size
 
 import xml.etree.ElementTree as ET
 from robocasa.models.objects.objects import MJCFObject
@@ -92,7 +95,33 @@ DEFAULT_CAMERAS = {
     EnvType.GYM_TYPE: ValueError("No camera names supported for gym type env!"),
 }
 
-# grounding_model = GroundUtils(device="cuda:1")
+# set a number range of new objects for each env
+ENV_NAME2RANGE = {
+    "PnPCounterToCab": (5, 10),
+    "PnPCabToCounter": (5, 8),
+    "PnPCounterToSink": (5, 10),
+    "PnPSinkToCounter": (3, 5),
+    "PnPCounterToMicrowave": (5, 10),
+    "PnPMicrowaveToCounter": (3, 5),
+    "PnPCounterToStove": (5, 10),
+    "PnPStoveToCounter": (2, 4),
+    "OpenSingleDoor": (5, 8),
+    "CloseSingleDoor": (5, 8),
+    "OpenDoubleDoor": (5, 8),
+    "CloseDoubleDoor": (5, 8),
+    "OpenDrawer": (5, 8),
+    "CloseDrawer": (5, 8),
+    "TurnOnSinkFaucet": (3, 6),
+    "TurnOffSinkFaucet": (3, 6),
+    "TurnSinkSpout": (3, 6),
+    "TurnOnStove": (5, 10),
+    "TurnOffStove": (5, 10),
+    "CoffeeSetupMug": (5, 10),
+    "CoffeeServeMug": (5, 10),
+    "CoffeePressButton": (5, 10),
+    "TurnOnMicrowave": (5, 10),
+    "TurnOffMicrowave": (5, 10)
+}
 
 
 # def save_new_data(args, tgt_f, )
@@ -139,6 +168,7 @@ def playback_trajectory_with_env(
     
     save_images = []
     save_masks = []
+    save_obs_dict = defaultdict(list)
     
     if args.write_gt_mask:
         target_obj_str = env.env.target_obj_str
@@ -148,7 +178,7 @@ def playback_trajectory_with_env(
         seg_sensors = {}
         geom2body_id_mapping = {geom_id: body_id for geom_id, body_id in enumerate(env.env.sim.model.geom_bodyid)}
         for cam_name in camera_names:
-            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "element", "segmentation", custom_mapping=geom2body_id_mapping)
+            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, args.camera_height, args.camera_width, "element", "segmentation", custom_mapping=geom2body_id_mapping)
             seg_sensors[cam_name] = seg_sensor
         name2id = env.env.sim.model._body_name2id
 
@@ -184,27 +214,46 @@ def playback_trajectory_with_env(
         action_abs = env.base_env.convert_rel_to_abs_action(actions[i])
         new_distr_names = [f"new_distr_{i}_main" for i in range(1, env.env.add_object_num+1)]
         
+        # save three view images and masks
+        if args.save_obs:
+            for cam_name in camera_names:
+                image_name = f"{cam_name}_image"
+                mask_name = f"{cam_name}_mask"
+                tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
+                tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
+                for tmp_target_obj_str in target_obj_str.split('/'):
+                    tmp_mask[tmp_seg == name2id[tmp_target_obj_str] + 1] = 1
+                if target_place_str:
+                    tmp_mask[tmp_seg == name2id[target_place_str] + 1] = 2
+                    # a special case
+                    if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                        tmp_mask[tmp_seg == name2id[None] + 1] = 2
+                
+                save_obs_dict[image_name].append(obs[image_name])
+                save_obs_dict[mask_name].append(tmp_mask)
+        
         # video render
         if not args.write_first_frame and video_count % video_skip == 0 or \
             args.write_first_frame and video_count == 0:
             video_img = []
             for cam_name in camera_names:
-                video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
+                video_img.append(env.render(mode="rgb_array", height=args.camera_height, width=args.camera_width, camera_name=cam_name))
             if len(save_images) == 0:
                 save_images.extend(video_img)
+            # breakpoint()
             video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
             if args.write_gt_mask:
                 seg_img = []
                 for cam_name in camera_names:
                     tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
-                    seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
-                    seg_rgb[:] = 0
+                    # seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
+                    seg_rgb = np.zeros((args.camera_height, args.camera_width, 3), dtype=np.uint8)
                     for tmp_target_obj_str in target_obj_str.split('/'):
                         seg_rgb[tmp_seg == name2id[tmp_target_obj_str] + 1, 0] = 255
                     if target_place_str:
                         seg_rgb[tmp_seg == name2id[target_place_str] + 1, 2] = 255
                         # a special case
-                        if len(seg_rgb[tmp_seg == name2id[target_place_str] + 1]) == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
                             seg_rgb[tmp_seg == name2id[None] + 1, 2] = 255
                     seg_img.append(seg_rgb)
                 if len(save_masks) == 0:
@@ -240,8 +289,8 @@ def playback_trajectory_with_env(
     #         video_writer.append_data(frame)
     
     outputs.update({
-        "images": save_images,
-        "masks": save_masks,
+        # "images": save_images,
+        # "masks": save_masks,
         "ep": ep,
         "lang": env._ep_lang_str,
         "unique_attr": env.env.unique_attr,
@@ -249,7 +298,8 @@ def playback_trajectory_with_env(
         "target_place_phrase": env.env.target_place_phrase,
         "new_model": env.env.sim.model.get_xml(),
         "new_ep_meta": env.env.get_ep_meta(),
-        "frames": frames
+        "frames": frames,
+        "save_obs_dict": save_obs_dict
     })
     print("Success:", success)
     return outputs, success
@@ -259,7 +309,7 @@ def playback_dataset(args):
     # some arg checking
     write_video = args.write_video #(args.video_path is not None)
     extra_str = ""
-    extra_str += "_addobj" if args.add_obj_num > 0 else ""
+    extra_str += "_addobj"
     extra_str += "_use_actions" if args.use_actions else ""
     extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
     if write_video and args.video_path is None: 
@@ -268,21 +318,21 @@ def playback_dataset(args):
     
     if args.save_new_data:
         tgt_dataset_path = args.dataset.split(".hdf5")[0] + extra_str + ".hdf5"
-        tgt_data_info_path = args.dataset.split(".hdf5")[0] + extra_str + ".pt"
+        # tgt_data_info_path = args.dataset.split(".hdf5")[0] + extra_str + ".pt"
         if os.path.exists(tgt_dataset_path):
             os.remove(tgt_dataset_path)
-        shutil.copy(args.dataset, tgt_dataset_path)
+        # shutil.copy(args.dataset, tgt_dataset_path)
 
     # Auto-fill camera rendering info if not specified
-    if args.render_image_names is None:
+    if args.camera_names is None:
         # We fill in the automatic values
         env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
         env_type = EnvUtils.get_env_type(env_meta=env_meta)
-        args.render_image_names = DEFAULT_CAMERAS[env_type]
+        args.camera_names = DEFAULT_CAMERAS[env_type]
 
     if args.render:
         # on-screen rendering can only support one camera
-        assert len(args.render_image_names) == 1
+        assert len(args.camera_names) == 1
 
     if args.use_obs:
         assert write_video, "playback with observations can only write to video"
@@ -302,14 +352,23 @@ def playback_dataset(args):
 
         env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
         # env_meta["env_kwargs"]["controller_configs"]["control_delta"] = False # absolute action space
-        env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=args.render, render_offscreen=True)
+        
+        # env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=args.render, render_offscreen=True)
+        env = EnvUtils.create_env_for_data_processing(
+            env_meta=env_meta,
+            camera_names=args.camera_names, 
+            camera_height=args.camera_height, 
+            camera_width=args.camera_width, 
+            reward_shaping=args.shaped,
+        )
 
         # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
         is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
     
     f = h5py.File(args.dataset, "r")
     if args.save_new_data:
-        tgt_f = h5py.File(tgt_dataset_path, "r+")
+        tgt_f = h5py.File(tgt_dataset_path, "w")
+        data_grp = tgt_f.create_group("data")
     else:
         tgt_f = None
 
@@ -324,7 +383,6 @@ def playback_dataset(args):
 
     inds = np.argsort([int(elem[5:]) for elem in demos])
     demos = [demos[i] for i in inds]
-    left_demos = copy.copy(demos)
     
     # maybe reduce the number of demonstrations to playback
     if args.n is not None:
@@ -334,6 +392,7 @@ def playback_dataset(args):
         demos = demos[:args.n]
     
     demos = demos[args.interval_left:args.interval_right]
+    add_num_range = ENV_NAME2RANGE[env._env_name]
 
     # maybe dump video
     video_writer = None
@@ -343,30 +402,33 @@ def playback_dataset(args):
     save_data_info = {}
         
     success_num = 0
+    total_samples = 0
     for ind in range(len(demos)):
         ep = demos[ind]
-        left_demos.remove(ep)
-        print("Playing back episode: {}".format(ep))
+        f_ep = f[f"data/{ep}"]
+        print(f"Playing back episode: {ep}")
 
         # prepare initial state to reload from
-        states = f["data/{}/states".format(ep)][()]
+        states = f_ep["states"][()]
         initial_state = dict(states=states[0])
         if is_robosuite_env:
-            initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
-            initial_state["ep_meta"] = f["data/{}".format(ep)].attrs.get("ep_meta", None)
+            initial_state["model"] = f_ep.attrs["model_file"]
+            initial_state["ep_meta"] = f_ep.attrs.get("ep_meta", None)
         
         ori_model = copy.copy(initial_state['model'])
         
         # supply actions if using open-loop action playback
         actions = None
         if args.use_actions:
-            actions = f["data/{}/actions".format(ep)][()]
-            # actions = f["data/{}/actions_abs".format(ep)][()] # absolute actions
+            actions = f_ep["actions"][()]
         
-        env.env.add_object_num = args.add_obj_num
         success = False
         for try_idx in range(3):
             try:
+                if args.add_obj_num != -1:
+                    env.env.add_object_num = args.add_obj_num
+                else:
+                    env.env.add_object_num = random.randint(*add_num_range)
                 initial_state['model'] = copy.copy(ori_model)
                 outputs, success = playback_trajectory_with_env(
                     env=env, 
@@ -377,7 +439,7 @@ def playback_dataset(args):
                     render=args.render, 
                     video_writer=video_writer, 
                     video_skip=args.video_skip,
-                    camera_names=args.render_image_names,
+                    camera_names=args.camera_names,
                     first=args.first,
                     ep=ep
                 )
@@ -398,8 +460,8 @@ def playback_dataset(args):
                 print("fail to reset env, try again...")
             
         if not success or outputs is None:
-            if tgt_f and f"data/{ep}" in tgt_f:
-                del tgt_f[f"data/{ep}"]
+            # if tgt_f and f"data/{ep}" in tgt_f:
+            #     del tgt_f[f"data/{ep}"]
             continue
 
         if write_video:
@@ -409,45 +471,77 @@ def playback_dataset(args):
         success_num += 1
         
         if args.save_new_data:
-            save_data_info[ep] = {
-                "lang": outputs["lang"],
-                "unique_attr": outputs["unique_attr"],
-                "target_obj_phrase": outputs["target_obj_phrase"],
-                "target_place_phrase": outputs["target_place_phrase"],
-                "images": outputs["images"],
-                "masks": outputs["masks"]
-            }
+            # save_data_info[ep] = {
+            #     "lang": outputs["lang"],
+            #     "unique_attr": outputs["unique_attr"],
+            #     "target_obj_phrase": outputs["target_obj_phrase"],
+            #     "target_place_phrase": outputs["target_place_phrase"],
+            #     # "images": outputs["images"],
+            #     # "masks": outputs["masks"]
+            # }
             
             new_model = outputs["new_model"]
             new_ep_meta = outputs["new_ep_meta"]
-            new_ep_meta['lang'] = outputs["lang"]
+            new_ep_meta["lang"] = outputs["lang"]
+            new_ep_meta["unique_attr"] = outputs["unique_attr"]
+            new_ep_meta["target_obj_phrase"] = outputs["target_obj_phrase"]
+            new_ep_meta["target_place_phrase"] = outputs["target_place_phrase"]
             new_ep_meta = json.dumps(new_ep_meta, indent=4)
             
             print('object number:', len(env.env.object_cfgs))
             print('instruction:', outputs['lang'])
             
-            tgt_f["data/{}".format(ep)].attrs["model_file"] = new_model
-            tgt_f["data/{}".format(ep)].attrs["ep_meta"] = new_ep_meta
-            for item_name in ['states', 'rewards', 'dones', 'actions_abs']:
-                item_path = f"data/{ep}/{item_name}"
-                if item_path in tgt_f:
-                    del tgt_f[item_path]
-                tgt_f.create_dataset(item_path, data=outputs[item_name])
+            ep_data_grp = data_grp.create_group(ep)
+            ep_data_grp.create_dataset("actions", data=actions)
+            ep_data_grp.create_dataset("states", data=np.array(outputs["states"]))
+            ep_data_grp.create_dataset("rewards", data=np.array(outputs["rewards"]))
+            ep_data_grp.create_dataset("dones", data=np.array(outputs["dones"]))
+            ep_data_grp.create_dataset("actions_abs", data=np.array(outputs["actions_abs"]))
+            for k in f_ep["obs"].keys():
+                if k not in outputs["save_obs_dict"]:
+                    ep_data_grp.create_dataset(f"obs/{k}", data=np.array(f_ep[f"obs/{k}"][()]), compression="gzip")
+            for k in outputs["save_obs_dict"]:
+                ep_data_grp.create_dataset(f"obs/{k}", data=np.array(outputs["save_obs_dict"][k]), compression="gzip")
+            if "action_dict" in f_ep:
+                action_dict = f_ep["action_dict"]
+                for k in action_dict:
+                    ep_data_grp.create_dataset(f"action_dict/{k}", data=np.array(action_dcit[k][()]))
+            ep_data_grp.attrs["model_file"] = new_model
+            ep_data_grp.attrs["ep_meta"] = new_ep_meta
+            ep_data_grp.attrs["num_samples"] = actions.shape[0]
+            total_samples += actions.shape[0]
+            
+            # tgt_f[f"data/{ep}"].attrs["model_file"] = new_model
+            # tgt_f[f"data/{ep}"].attrs["ep_meta"] = new_ep_meta
+            # for item_name in ['states', 'rewards', 'dones', 'actions_abs']:
+            #     item_path = f"data/{ep}/{item_name}"
+            #     if item_path in tgt_f:
+            #         del tgt_f[item_path]
+            #     tgt_f.create_dataset(item_path, data=outputs[item_name])
     
     print(f"success: {success_num}/{len(demos)}")
     
-    f.close()
     if args.save_new_data:
-        for ep in left_demos:
-            if f"data/{ep}" in tgt_f:
-                del tgt_f[f"data/{ep}"]
+        if "mask" in f:
+            f.copy("mask", tgt_f)
+        data_grp.attrs["total"] = total_samples
+        data_grp.attrs["env_args"] = json.dumps(env.serialize(), indent=4)
         tgt_f.close()
+    f.close()
+    
+    if args.save_new_data:
+        extract_action_dict(dataset=tgt_dataset_path)
+        for num_demos in [10, 20, 30, 40, 50, 60, 70, 75, 80, 90, 100, 125, 150, 200, 250, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 10000]:
+            filter_dataset_size(
+                tgt_dataset_path,
+                num_demos=num_demos,
+            )
         
     if write_video:
         video_writer.close()
     
-    if args.save_new_data:
-        torch.save(save_data_info, tgt_data_info_path)
+    # if args.save_new_data:
+    #     torch.save(save_data_info, tgt_data_info_path)
         
 
 if __name__ == "__main__":
@@ -511,12 +605,33 @@ if __name__ == "__main__":
 
     # camera names to render, or image observations to use for writing to video
     parser.add_argument(
-        "--render_image_names",
+        "--camera_names",
         type=str,
         nargs='+',
         default=["robot0_agentview_left", "robot0_agentview_right", "robot0_eye_in_hand"],
         help="(optional) camera name(s) / image observation(s) to use for rendering on-screen or to video. Default is"
              "None, which corresponds to a predefined camera for each env type",
+    )
+    
+    parser.add_argument(
+        "--camera_height",
+        type=int,
+        default=256,
+        help="height of image observations"
+    )
+    
+    parser.add_argument(
+        "--camera_width",
+        type=int,
+        default=256,
+        help="width of image observations"
+    )
+    
+    # flag for reward shaping
+    parser.add_argument(
+        "--shaped", 
+        action='store_true',
+        help="(optional) use shaped rewards",
     )
 
     # Only use the first frame of each episode
@@ -534,7 +649,7 @@ if __name__ == "__main__":
     
     parser.add_argument(
         "--add_obj_num",
-        default=0,
+        default=-1,
         type=int,
         help="number of newly added objects"
     )
@@ -555,6 +670,12 @@ if __name__ == "__main__":
         "--save_new_data",
         action="store_true",
         help="save successful demos (with added objects)"
+    )
+    
+    parser.add_argument(
+        "--save_obs",
+        action="store_true",
+        help="save obs and masks"
     )
     
     parser.add_argument(
