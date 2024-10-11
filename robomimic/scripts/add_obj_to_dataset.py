@@ -141,17 +141,16 @@ def playback_trajectory_with_env(
     save_masks = []
     
     if args.write_gt_mask:
-        geom2body_id_mapping = {geom_id: body_id for geom_id, body_id in enumerate(env.env.sim.model.geom_bodyid)}
-        seg_sensors = {}
-        for cam_name in camera_names:
-            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "element", "segmentation", custom_mapping=geom2body_id_mapping)
-            seg_sensors[cam_name] = seg_sensor
-        # name2id = {inst: i for i, inst in enumerate(list(env.env.model.instances_to_ids.keys()))}
-        name2id = env.env.sim.model._body_name2id
         target_obj_str = env.env.target_obj_str
         if target_obj_str == "obj":
             target_obj_str += "_main"
         target_place_str = env.env.target_place_str
+        seg_sensors = {}
+        geom2body_id_mapping = {geom_id: body_id for geom_id, body_id in enumerate(env.env.sim.model.geom_bodyid)}
+        for cam_name in camera_names:
+            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, 512, 512, "element", "segmentation", custom_mapping=geom2body_id_mapping)
+            seg_sensors[cam_name] = seg_sensor
+        name2id = env.env.sim.model._body_name2id
 
     traj_len = states.shape[0]
     action_playback = (actions is not None)
@@ -199,12 +198,14 @@ def playback_trajectory_with_env(
                 for cam_name in camera_names:
                     tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
                     seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
-                    # print([x for x in name2id.keys() if target_obj_str in x])
-                    # breakpoint()
                     seg_rgb[:] = 0
-                    seg_rgb[tmp_seg == name2id[target_obj_str] + 1, 0] = 255
+                    for tmp_target_obj_str in target_obj_str.split('/'):
+                        seg_rgb[tmp_seg == name2id[tmp_target_obj_str] + 1, 0] = 255
                     if target_place_str:
                         seg_rgb[tmp_seg == name2id[target_place_str] + 1, 2] = 255
+                        # a special case
+                        if len(seg_rgb[tmp_seg == name2id[target_place_str] + 1]) == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                            seg_rgb[tmp_seg == name2id[None] + 1, 2] = 255
                     seg_img.append(seg_rgb)
                 if len(save_masks) == 0:
                     save_masks.extend(seg_img)
