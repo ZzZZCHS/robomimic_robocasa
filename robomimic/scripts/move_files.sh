@@ -1,4 +1,3 @@
-#!/bin/bash
 
 task_dirs=(
     "/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33/"
@@ -27,66 +26,17 @@ task_dirs=(
     "/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeePressButton/mg/2024-05-04-22-21-32/"
 )
 
-# data_path="/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33/demo_gentex_im128_randcams.hdf5"
+tgt_dir=/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1013
 
-TOTAL_DATA=3000
-NUM_PROCESSES=40
-GPU_NUM=8
-PROCESS_PER_GPU=$((NUM_PROCESSES / GPU_NUM))
-BASE_CHUNK_SIZE=$((TOTAL_DATA / NUM_PROCESSES))
-REMAINDER=$((TOTAL_DATA % NUM_PROCESSES))
-
-mkdir -p logs
-declare -a PIDS
-
-ST_I=$1
-ED_I=$2
-
-for ((i = ST_I; i < ED_I; ++i))
+for ((i = 0; i < 24; ++i))
 do
     data_path=${task_dirs[$i]}/demo_gentex_im128_randcams.hdf5
-    START_INDEX=0
-    START_TIME=$SECONDS
-
-    for (( PROCESS_ID=0; PROCESS_ID<NUM_PROCESSES; PROCESS_ID++ ))
-    do
-        CHUNK_SIZE=$BASE_CHUNK_SIZE
-        if [ $PROCESS_ID -lt $REMAINDER ]; then
-            CHUNK_SIZE=$((CHUNK_SIZE + 1))
-        fi
-
-        END_INDEX=$((START_INDEX + CHUNK_SIZE))
-
-        GPU_ID=$((PROCESS_ID / PROCESS_PER_GPU))
-
-        echo "Launching process $PROCESS_ID on GPU $GPU_ID with data indices $START_INDEX to $END_INDEX"
-
-        CUDA_VISIBLE_DEVICES=$GPU_ID python robomimic/scripts/add_obj_to_dataset.py \
-            --dataset ${data_path} \
-            --write_gt_mask \
-            --use_actions \
-            --save_new_data --save_obs \
-            --interval_left $START_INDEX \
-            --interval_right $END_INDEX \
-            --global_process_id $PROCESS_ID \
-            > logs/process_$PROCESS_ID.log 2>&1 &
-
-        PID=$!
-        PIDS[$PROCESS_ID]=$PID
-
-        # Update the start index for the next process
-        START_INDEX=$((END_INDEX))
-    done
-
-    echo "Wait for processes: ${PIDS[@]}"
-    wait
-
-    echo "All processes have completed."
-    ELAPSED_TIME=$(($SECONDS - $START_TIME))
-    echo "$(($ELAPSED_TIME/60)) min $(($ELAPSED_TIME%60)) sec"  
-
-    python robomimic/scripts/merge_hdf5_files.py \
-        --task_dir ${task_dirs[$i]} \
-        --src_filename "demo_gentex_im128_randcams_addobj_use_actions_process*.hdf5" \
-        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1013.hdf5"
+    arrTask=(${task_dirs[$i]//// })
+    task_name=${arrTask[-3]}
+    tgt_task_dir=${tgt_dir}/${task_name}
+    file_size=$(stat -c%s $data_path)
+    echo $task_name $file_size
+    # if [ ! -d $tgt_task_dir ]; then
+    #     mkdir $tgt_task_dir
+    # fi
 done

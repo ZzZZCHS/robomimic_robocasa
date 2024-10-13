@@ -218,19 +218,22 @@ def playback_trajectory_with_env(
         if args.save_obs:
             for cam_name in camera_names:
                 image_name = f"{cam_name}_image"
-                mask_name = f"{cam_name}_mask"
-                tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
-                tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
-                for tmp_target_obj_str in target_obj_str.split('/'):
-                    tmp_mask[tmp_seg == name2id[tmp_target_obj_str] + 1] = 1
-                if target_place_str:
-                    tmp_mask[tmp_seg == name2id[target_place_str] + 1] = 2
-                    # a special case
-                    if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
-                        tmp_mask[tmp_seg == name2id[None] + 1] = 2
-                
                 save_obs_dict[image_name].append(obs[image_name])
-                save_obs_dict[mask_name].append(tmp_mask)
+                
+                if video_count % video_skip == 0:
+                    mask_name = f"{cam_name}_mask"
+                    tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
+                    tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
+                    for tmp_target_obj_str in target_obj_str.split('/'):
+                        tmp_mask[tmp_seg == name2id[tmp_target_obj_str] + 1] = 1
+                    if target_place_str:
+                        tmp_mask[tmp_seg == name2id[target_place_str] + 1] = 2
+                        # a special case
+                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                            tmp_mask[tmp_seg == name2id[None] + 1] = 2
+                    save_obs_dict[mask_name].append(tmp_mask)
+                else:
+                    save_obs_dict[mask_name].append(save_obs_dict[mask_name][-1])
         
         # video render
         if not args.write_first_frame and video_count % video_skip == 0 or \
@@ -505,7 +508,7 @@ def playback_dataset(args):
             if "action_dict" in f_ep:
                 action_dict = f_ep["action_dict"]
                 for k in action_dict:
-                    ep_data_grp.create_dataset(f"action_dict/{k}", data=np.array(action_dcit[k][()]))
+                    ep_data_grp.create_dataset(f"action_dict/{k}", data=np.array(action_dict[k][()]))
             ep_data_grp.attrs["model_file"] = new_model
             ep_data_grp.attrs["ep_meta"] = new_ep_meta
             ep_data_grp.attrs["num_samples"] = actions.shape[0]
