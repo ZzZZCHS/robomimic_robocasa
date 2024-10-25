@@ -29,9 +29,13 @@ task_dirs=(
 
 # data_path="/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33/demo_gentex_im128_randcams.hdf5"
 
+
+ST_I=$1
+ED_I=$2
+GPU_NUM=$3
+
 TOTAL_DATA=3000
-NUM_PROCESSES=40
-GPU_NUM=8
+NUM_PROCESSES=$((GPU_NUM * 5))
 PROCESS_PER_GPU=$((NUM_PROCESSES / GPU_NUM))
 BASE_CHUNK_SIZE=$((TOTAL_DATA / NUM_PROCESSES))
 REMAINDER=$((TOTAL_DATA % NUM_PROCESSES))
@@ -39,8 +43,6 @@ REMAINDER=$((TOTAL_DATA % NUM_PROCESSES))
 mkdir -p logs
 declare -a PIDS
 
-ST_I=$1
-ED_I=$2
 
 for ((i = ST_I; i < ED_I; ++i))
 do
@@ -88,5 +90,5 @@ do
     python robomimic/scripts/merge_hdf5_files.py \
         --task_dir ${task_dirs[$i]} \
         --src_filename "demo_gentex_im128_randcams_addobj_use_actions_process*.hdf5" \
-        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1013.hdf5"
+        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1024.hdf5"
 done

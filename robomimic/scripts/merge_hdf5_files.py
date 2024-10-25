@@ -18,18 +18,21 @@ def merge_hdf5_files(args):
         os.remove(tgt_file_path)
     tgt_f = h5py.File(tgt_file_path, 'w')
     for filename in tqdm(sorted(glob.glob(src_file_path))):
-        src_f = h5py.File(filename, 'r')
-        for name in src_f:
-            if name not in tgt_f:
-                src_f.copy(name, tgt_f, name=name)
-            else:
-                if name == 'data':
-                    for demo_id in src_f[name]:
-                        # new_demo_id = f"demo_{int(demo_id.split('_')[1])+st_idx}"
-                        src_f.copy(f"{name}/{demo_id}", tgt_f, name=f"{name}/{demo_id}")
-        src_f.close()
+        try:
+            src_f = h5py.File(filename, 'r')
+            for name in src_f:
+                if name not in tgt_f:
+                    src_f.copy(name, tgt_f, name=name)
+                else:
+                    if name == 'data':
+                        for demo_id in src_f[name]:
+                            # new_demo_id = f"demo_{int(demo_id.split('_')[1])+st_idx}"
+                            src_f.copy(f"{name}/{demo_id}", tgt_f, name=f"{name}/{demo_id}")
+        except:
+            print(filename)
+            if src_f:
+                src_f.close()
         os.remove(filename)
-    
     total_len = 0
     for demo_id in tgt_f['data'].keys():
         total_len += tgt_f[f"data/{demo_id}/actions"].shape[0]

@@ -26,9 +26,11 @@ import spacy
 
 
 class GroundUtils:
-    def __init__(self, device='cuda:1'):
+    def __init__(self, device='cuda:1', mode="raw"):
         # args
-        self.version = "/ssd/home/groups/smartbot/huanghaifeng/groundingLMM/GLaMM-FullScope"
+        if mode == "raw":
+            self.version = "/ssd/home/groups/smartbot/huanghaifeng/groundingLMM/GLaMM-FullScope"
+        self.mode = mode
         self.vis_save_path = "./vis_output"
         self.precision = "bf16"
         self.image_size = 1024
@@ -77,7 +79,7 @@ class GroundUtils:
                 for chunk in doc.noun_chunks:
                     if token in chunk:
                         direct_object_phrases.append(chunk.text)
-                        break
+                        # break
         
         return direct_object_phrases
         
@@ -244,8 +246,9 @@ class GroundUtils:
         if draw_image is None:
             draw_image = image_np
             # color_history = []
+        seg_mask = np.zeros(image_np.shape[:2], dtype=np.uint8)
         if "[SEG]" in text_output:
             save_img, seg_mask = self.prepare_mask(draw_image, pred_masks, text_output)
 
-        return save_img
+        return seg_mask
 

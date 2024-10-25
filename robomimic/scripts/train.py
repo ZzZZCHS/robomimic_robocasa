@@ -34,6 +34,7 @@ import torch.nn as nn
 
 import robomimic
 import robomimic.utils.train_utils as TrainUtils
+from robomimic.utils.train_utils import VAL_ENV_INFOS
 import robomimic.utils.torch_utils as TorchUtils
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
@@ -57,7 +58,7 @@ def setup_seed(seed):
     random.seed(seed)
     
 
-def train(config, device):
+def train(config, device, args):
     """
     Train a model using the algorithm.
     """
@@ -123,7 +124,10 @@ def train(config, device):
     eval_shape_meta_list = []
     eval_env_name_list = []
     eval_env_horizon_list = []
+    
     for (dataset_i, dataset_cfg) in enumerate(config.train.data):
+        if env_meta_list[dataset_i]["env_name"] not in VAL_ENV_INFOS:
+            continue
         do_eval = dataset_cfg.get("do_eval", True)
         if do_eval is not True:
             continue
@@ -134,7 +138,7 @@ def train(config, device):
         eval_env_horizon_list.append(horizon)
     
     # initialize grounding model
-    if "masked_rgb" in config.observation.modalities.obs and len(eval_env_meta_list) > 0:
+    if "masked_rgb" in config.observation.modalities.obs and len(eval_env_meta_list) > 0 and not args.use_gt_mask:
         grounding_model = GroundUtils(device="cuda:1")
     else:
         grounding_model = None
@@ -365,7 +369,9 @@ def train(config, device):
                 terminate_on_success=config.experiment.rollout.terminate_on_success,
                 del_envs_after_rollouts=True,
                 data_logger=data_logger,
-                grounding_model=grounding_model
+                grounding_model=grounding_model,
+                log_dir=log_dir,
+                args=args
             )
 
             #### move this code to rollout_with_stats function to log results one by one ####
@@ -507,7 +513,7 @@ def main(args):
     # catch error during training and print it
     res_str = "finished run successfully!"
     try:
-        train(config, device=device)
+        train(config, device=device, args=args)
     except Exception as e:
         res_str = "run failed with error:\n{}\n\n{}".format(e, traceback.format_exc())
     print(res_str)
@@ -553,6 +559,25 @@ if __name__ == "__main__":
         "--debug",
         action='store_true',
         help="set this flag to run a quick training run for debugging purposes"
+    )
+    
+    parser.add_argument(
+        "--use_gt_mask",
+        action="store_true",
+        help="use ground truth mask"
+    )
+    
+    parser.add_argument(
+        "--generate_val_data_path",
+        type=str,
+        default=None,
+        help="path to the generated new val data"
+    )
+    
+    parser.add_argument(
+        "--image_size",
+        type=int,
+        default=256
     )
 
     args = parser.parse_args()

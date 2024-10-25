@@ -97,30 +97,30 @@ DEFAULT_CAMERAS = {
 
 # set a number range of new objects for each env
 ENV_NAME2RANGE = {
-    "PnPCounterToCab": (5, 10),
-    "PnPCabToCounter": (5, 8),
-    "PnPCounterToSink": (5, 10),
-    "PnPSinkToCounter": (3, 5),
-    "PnPCounterToMicrowave": (5, 10),
-    "PnPMicrowaveToCounter": (3, 5),
-    "PnPCounterToStove": (5, 10),
-    "PnPStoveToCounter": (2, 4),
-    "OpenSingleDoor": (5, 8),
-    "CloseSingleDoor": (5, 8),
-    "OpenDoubleDoor": (5, 8),
-    "CloseDoubleDoor": (5, 8),
-    "OpenDrawer": (5, 8),
-    "CloseDrawer": (5, 8),
+    "PnPCounterToCab": (3, 6),
+    "PnPCabToCounter": (3, 6),
+    "PnPCounterToSink": (3, 6),
+    "PnPSinkToCounter": (2, 4),
+    "PnPCounterToMicrowave": (2, 5),
+    "PnPMicrowaveToCounter": (2, 4),
+    "PnPCounterToStove": (3, 6),
+    "PnPStoveToCounter": (1, 3),
+    "OpenSingleDoor": (3, 6),
+    "CloseSingleDoor": (3, 6),
+    "OpenDoubleDoor": (3, 6),
+    "CloseDoubleDoor": (3, 6),
+    "OpenDrawer": (2, 5),
+    "CloseDrawer": (2, 5),
     "TurnOnSinkFaucet": (3, 6),
     "TurnOffSinkFaucet": (3, 6),
     "TurnSinkSpout": (3, 6),
-    "TurnOnStove": (5, 10),
-    "TurnOffStove": (5, 10),
-    "CoffeeSetupMug": (5, 10),
-    "CoffeeServeMug": (5, 10),
-    "CoffeePressButton": (5, 10),
-    "TurnOnMicrowave": (5, 10),
-    "TurnOffMicrowave": (5, 10)
+    "TurnOnStove": (3, 6),
+    "TurnOffStove": (3, 6),
+    "CoffeeSetupMug": (3, 6),
+    "CoffeeServeMug": (3, 6),
+    "CoffeePressButton": (3, 6),
+    "TurnOnMicrowave": (3, 6),
+    "TurnOffMicrowave": (3, 6)
 }
 
 
@@ -161,8 +161,6 @@ def playback_trajectory_with_env(
 
     video_count = 0
     
-    zero_actions = np.zeros(actions.shape[1])
-
     # load the initial state
     ob_dict = env.reset_to(initial_state)
     
@@ -175,10 +173,11 @@ def playback_trajectory_with_env(
         if target_obj_str == "obj":
             target_obj_str += "_main"
         target_place_str = env.env.target_place_str
+        
         seg_sensors = {}
         geom2body_id_mapping = {geom_id: body_id for geom_id, body_id in enumerate(env.env.sim.model.geom_bodyid)}
         for cam_name in camera_names:
-            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, args.camera_height, args.camera_width, "element", "segmentation", custom_mapping=geom2body_id_mapping)
+            seg_sensor, seg_name = env.env._create_segmentation_sensor(cam_name, args.camera_width, args.camera_height, "element", "segmentation", custom_mapping=geom2body_id_mapping)
             seg_sensors[cam_name] = seg_sensor
         name2id = env.env.sim.model._body_name2id
 
@@ -187,12 +186,13 @@ def playback_trajectory_with_env(
     if action_playback:
         assert states.shape[0] == actions.shape[0]
     
-    zero_actions = np.zeros(actions.shape[1])
-    for i in range(50):
-        env.step(zero_actions)
+    if env.env.add_object_num > 0:
+        zero_actions = np.zeros(actions.shape[1])
+        for i in range(50):
+            env.step(zero_actions)
 
     success = False
-    outputs = dict(actions_abs=[], rewards=[], dones=[], states=[])
+    outputs = defaultdict(list)
 
     frames = []
     
@@ -201,17 +201,15 @@ def playback_trajectory_with_env(
         if action_playback:
             obs, r, _, info = env.step(actions[i])
         else:
-            env.reset_to({"states" : states[i]})
-
+            obs = env.reset_to({"states" : states[i]})
+            r = env.get_reward()
+            
         # on-screen render
         if render:
             env.render(mode="human", camera_name=camera_names[0])
             
-        if action_playback:
-            r = env.get_reward()
         done = success = env.is_success()["task"]
         done = int(done)
-        action_abs = env.base_env.convert_rel_to_abs_action(actions[i])
         new_distr_names = [f"new_distr_{i}_main" for i in range(1, env.env.add_object_num+1)]
         
         # save three view images and masks
@@ -220,7 +218,20 @@ def playback_trajectory_with_env(
                 image_name = f"{cam_name}_image"
                 save_obs_dict[image_name].append(obs[image_name])
                 
-                if video_count % video_skip == 0:
+                # save depth image
+                depth_name = f"{cam_name}_depth"
+                _, depth = env.env.sim.render(
+                    camera_name=cam_name,
+                    width=args.camera_width,
+                    height=args.camera_height,
+                    depth=True
+                )
+                depth = np.expand_dims(depth[::-1], axis=-1)
+                save_obs_dict[depth_name].append(depth)
+                # Image.fromarray(((depth-depth.min())/(depth.max()-depth.min())*255).astype(np.uint8)).save('tmp.jpg')
+                
+                # save segmentation mask
+                if video_count == 0:
                     mask_name = f"{cam_name}_mask"
                     tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
                     tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
@@ -231,9 +242,7 @@ def playback_trajectory_with_env(
                         # a special case
                         if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
                             tmp_mask[tmp_seg == name2id[None] + 1] = 2
-                    save_obs_dict[mask_name].append(tmp_mask)
-                else:
-                    save_obs_dict[mask_name].append(save_obs_dict[mask_name][-1])
+                    save_obs_dict[mask_name].append(np.expand_dims(tmp_mask, axis=-1))
         
         # video render
         if not args.write_first_frame and video_count % video_skip == 0 or \
@@ -282,7 +291,8 @@ def playback_trajectory_with_env(
 
         outputs['rewards'].append(r)
         outputs['dones'].append(done)
-        outputs['actions_abs'].append(action_abs)
+        if action_playback:
+            outputs['actions_abs'].append(env.base_env.convert_rel_to_abs_action(actions[i]))
         outputs['states'].append(state)
     
     # breakpoint()
@@ -418,17 +428,22 @@ def playback_dataset(args):
             initial_state["model"] = f_ep.attrs["model_file"]
             initial_state["ep_meta"] = f_ep.attrs.get("ep_meta", None)
         
+        if not args.use_actions:
+            tmp_ep_meta = json.loads(initial_state["ep_meta"])
+            tmp_ep_meta["unique_attr"] = "class"
+            initial_state["ep_meta"] = json.dumps(tmp_ep_meta, indent=4)
+        
         ori_model = copy.copy(initial_state['model'])
         
         # supply actions if using open-loop action playback
-        actions = None
-        if args.use_actions:
-            actions = f_ep["actions"][()]
+        actions = f_ep["actions"][()]
         
         success = False
         for try_idx in range(3):
             try:
-                if args.add_obj_num != -1:
+                if not args.use_actions:
+                    env.env.add_object_num = 0
+                elif args.add_obj_num != -1:
                     env.env.add_object_num = args.add_obj_num
                 else:
                     env.env.add_object_num = random.randint(*add_num_range)
@@ -438,7 +453,7 @@ def playback_dataset(args):
                     initial_state=initial_state, 
                     states=states, 
                     args=args,
-                    actions=actions, 
+                    actions=actions if args.use_actions else None, 
                     render=args.render, 
                     video_writer=video_writer, 
                     video_skip=args.video_skip,
@@ -463,8 +478,6 @@ def playback_dataset(args):
                 print("fail to reset env, try again...")
             
         if not success or outputs is None:
-            # if tgt_f and f"data/{ep}" in tgt_f:
-            #     del tgt_f[f"data/{ep}"]
             continue
 
         if write_video:
@@ -474,15 +487,6 @@ def playback_dataset(args):
         success_num += 1
         
         if args.save_new_data:
-            # save_data_info[ep] = {
-            #     "lang": outputs["lang"],
-            #     "unique_attr": outputs["unique_attr"],
-            #     "target_obj_phrase": outputs["target_obj_phrase"],
-            #     "target_place_phrase": outputs["target_place_phrase"],
-            #     # "images": outputs["images"],
-            #     # "masks": outputs["masks"]
-            # }
-            
             new_model = outputs["new_model"]
             new_ep_meta = outputs["new_ep_meta"]
             new_ep_meta["lang"] = outputs["lang"]
@@ -499,7 +503,10 @@ def playback_dataset(args):
             ep_data_grp.create_dataset("states", data=np.array(outputs["states"]))
             ep_data_grp.create_dataset("rewards", data=np.array(outputs["rewards"]))
             ep_data_grp.create_dataset("dones", data=np.array(outputs["dones"]))
-            ep_data_grp.create_dataset("actions_abs", data=np.array(outputs["actions_abs"]))
+            if args.use_actions:
+                ep_data_grp.create_dataset("actions_abs", data=np.array(outputs["actions_abs"]))
+            else:
+                ep_data_grp.create_dataset("actions_abs", data=f_ep["actions_abs"][()])
             for k in f_ep["obs"].keys():
                 if k not in outputs["save_obs_dict"]:
                     ep_data_grp.create_dataset(f"obs/{k}", data=np.array(f_ep[f"obs/{k}"][()]), compression="gzip")
@@ -513,14 +520,6 @@ def playback_dataset(args):
             ep_data_grp.attrs["ep_meta"] = new_ep_meta
             ep_data_grp.attrs["num_samples"] = actions.shape[0]
             total_samples += actions.shape[0]
-            
-            # tgt_f[f"data/{ep}"].attrs["model_file"] = new_model
-            # tgt_f[f"data/{ep}"].attrs["ep_meta"] = new_ep_meta
-            # for item_name in ['states', 'rewards', 'dones', 'actions_abs']:
-            #     item_path = f"data/{ep}/{item_name}"
-            #     if item_path in tgt_f:
-            #         del tgt_f[item_path]
-            #     tgt_f.create_dataset(item_path, data=outputs[item_name])
     
     print(f"success: {success_num}/{len(demos)}")
     

@@ -154,7 +154,7 @@ def set_env_settings(generator, args):
             name="obsrandargs",
             group=-1,
             values=[
-                {"crop_height": 116, "crop_width": 116, "num_crops": 1, "pos_enc": False},
+                {"crop_height": args.crop_size, "crop_width": args.crop_size, "num_crops": 1, "pos_enc": False},
             ],
             hidename=True,
         )
@@ -165,7 +165,7 @@ def set_env_settings(generator, args):
                 name="obsrandargs",
                 group=-1,
                 values=[
-                    {"crop_height": 116, "crop_width": 116, "num_crops": 1, "pos_enc": False},
+                    {"crop_height": args.crop_size, "crop_width": args.crop_size, "num_crops": 1, "pos_enc": False},
                 ],
                 hidename=True,
             )
@@ -213,9 +213,9 @@ def set_env_settings(generator, args):
                     name="",
                     group=-1,
                     values=[
-                        ["masked_robot0_agentview_left_image",
-                         "masked_robot0_agentview_right_image",
-                         "masked_robot0_eye_in_hand_image"]
+                        ["robot0_agentview_left_mask",
+                         "robot0_agentview_right_mask",
+                         "robot0_eye_in_hand_mask"]
                     ],
                 )
         else:
@@ -281,14 +281,14 @@ def set_mod_settings(generator, args):
                 key="train.batch_size",
                 name="",
                 group=-1,
-                values=[16],
+                values=[8],
             )
         if "train.num_epochs" not in generator.parameters:
             generator.add_param(
                 key="train.num_epochs",
                 name="",
                 group=-1,
-                values=[1000],
+                values=[500],
             )
         if "experiment.rollout.rate" not in generator.parameters:
             generator.add_param(
@@ -542,6 +542,23 @@ def get_argparser():
     parser.add_argument(
         "--addmask",
         action="store_true"
+    )
+    
+    parser.add_argument(
+        "--ckpt",
+        type=str,
+        default=None
+    )
+    
+    parser.add_argument(
+        "--enable_rollout",
+        action="store_true",
+    )
+    
+    parser.add_argument(
+        "--crop_size",
+        type=int,
+        default=232
     )
 
     return parser

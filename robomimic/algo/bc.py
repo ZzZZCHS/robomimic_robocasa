@@ -724,6 +724,7 @@ class BC_Transformer(BC):
         """
         input_batch = dict()
         h = self.context_length
+        
         input_batch["obs"] = {k: batch["obs"][k][:, :h, :] for k in batch["obs"]}
         input_batch["goal_obs"] = batch.get("goal_obs", None) # goals may not be present
 

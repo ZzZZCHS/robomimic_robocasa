@@ -15,6 +15,7 @@ import traceback
 from copy import deepcopy
 from collections import OrderedDict
 import cv2
+import random
 
 import torch
 
@@ -28,6 +29,36 @@ from robomimic.envs.env_base import EnvBase
 from robomimic.envs.wrappers import EnvWrapper
 from robomimic.algo import RolloutPolicy
 from tianshou.env import SubprocVectorEnv
+
+
+ENV_NAME2RANGE = {
+    "PnPCounterToCab": (3, 6),
+    "PnPCabToCounter": (3, 6),
+    "PnPCounterToSink": (3, 6),
+    "PnPSinkToCounter": (2, 4),
+    "PnPCounterToMicrowave": (2, 5),
+    "PnPMicrowaveToCounter": (2, 4),
+    "PnPCounterToStove": (3, 6),
+    "PnPStoveToCounter": (1, 3),
+    "OpenSingleDoor": (3, 6),
+    "CloseSingleDoor": (3, 6),
+    "OpenDoubleDoor": (3, 6),
+    "CloseDoubleDoor": (3, 6),
+    "OpenDrawer": (2, 5),
+    "CloseDrawer": (2, 5),
+    "TurnOnSinkFaucet": (3, 6),
+    "TurnOffSinkFaucet": (3, 6),
+    "TurnSinkSpout": (3, 6),
+    "TurnOnStove": (3, 6),
+    "TurnOffStove": (3, 6),
+    "CoffeeSetupMug": (3, 6),
+    "CoffeeServeMug": (3, 6),
+    "CoffeePressButton": (3, 6),
+    "TurnOnMicrowave": (3, 6),
+    "TurnOffMicrowave": (3, 6)
+}
+
+VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1013/train_env_infos.pt", map_location="cpu")
 
 
 def get_exp_dir(config, auto_remove_exp_dir=False):
@@ -262,13 +293,15 @@ def run_rollout(
         policy, 
         env, 
         horizon,
+        initial_state=None,
         use_goals=False,
         render=False,
         video_writer=None,
         video_skip=5,
         terminate_on_success=False,
         grounding_model=None,
-        ep_i=0
+        ep_i=0,
+        args=None
     ):
     """
     Runs a rollout in an environment with the current network parameters.
@@ -298,9 +331,50 @@ def run_rollout(
     assert isinstance(env, EnvBase) or isinstance(env, EnvWrapper) or isinstance(env, SubprocVectorEnv)
 
     batched = isinstance(env, SubprocVectorEnv)
-    env.env.env.add_object_num = 10
-    env.env.env.rng = np.random.default_rng(ep_i + 317)
-    ob_dict = env.reset()
+    
+    env.env.env.add_object_num = 0
+    if initial_state is not None:
+        ob_dict = env.reset_to(initial_state)
+        assert env.env.env.unique_attr == json.loads(initial_state["ep_meta"])["unique_attr"]
+    else:
+        # env.env.env.rng = np.random.default_rng(ep_i + 317)
+        env.reset()
+        add_num_range = ENV_NAME2RANGE[env.env._env_name]
+        env.env.env.add_object_num = random.randint(*add_num_range)
+        ob_dict = env.reset_to(env.env.get_state())
+        env.env.env._ep_meta = {}
+        
+        zero_actions = np.zeros(12)
+        for i in range(50):
+            env.step(zero_actions)
+        
+        state = {
+            "model": env.env.env.sim.model.get_xml(),
+            "states": np.array(env.env.env.sim.get_state().flatten()),
+            "ep_meta": env.env.env.get_ep_meta()
+        }
+        state["ep_meta"].update({
+            "lang": env._ep_lang_str,
+            "unique_attr": env.env.env.unique_attr,
+            "target_obj_phrase": env.env.env.target_obj_phrase,
+            "target_place_phrase": env.env.env.target_place_phrase
+        })
+        state["ep_meta"] = json.dumps(state["ep_meta"], indent=4)
+        frame = env.render(mode="rgb_array", height=512, width=512)
+        frame = frame.copy()
+        text1 = env._ep_lang_str
+        position1 = (10, 50)
+        color = (255, 0, 0)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        thickness = 1
+        font_scale = 0.5
+        cv2.putText(frame, text1, position1, font, font_scale, color, thickness)
+        text2 = f"demo index: {ep_i}"
+        position2 = (10, 100)
+        cv2.putText(frame, text2, position2, font, font_scale, color, thickness)
+        video_writer.append_data(frame)
+        return state
+            
     
     policy.start_episode(lang=env._ep_lang_str)
     # print(env._ep_lang_str)
@@ -326,11 +400,47 @@ def run_rollout(
     else:
         video_frames = []
         
-    if grounding_model is not None:
+    if args.use_gt_mask:
+        target_obj_str = env.env.env.target_obj_str
+        if target_obj_str == "obj":
+            target_obj_str += "_main"
+        target_place_str = env.env.env.target_place_str
+        camera_names = ["robot0_agentview_left", "robot0_agentview_right", "robot0_eye_in_hand"]
+        masked_dict = {}
+        geom2body_id_mapping = {geom_id: body_id for geom_id, body_id in enumerate(env.env.env.sim.model.geom_bodyid)}
+        name2id = env.env.env.sim.model._body_name2id
+        for cam_name in camera_names:
+            seg = env.env.env.sim.render(
+                camera_name=cam_name,
+                width=args.image_size,
+                height=args.image_size,
+                depth=False,
+                segmentation=True
+            )
+            seg = seg[::-1, :, 1]
+            tmp_seg = (
+                np.fromiter(
+                    map(
+                        lambda x: geom2body_id_mapping.get(x, -1),
+                        seg.flatten()
+                    ),
+                    dtype=np.int32
+                ).reshape(args.image_size, args.image_size)
+            )
+            tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
+            for tmp_target_obj_str in target_obj_str.split('/'):
+                tmp_mask[tmp_seg == name2id[tmp_target_obj_str]] = 1
+            if target_place_str:
+                tmp_mask[tmp_seg == name2id[target_place_str]] = 2
+                if (tmp_seg == name2id[target_place_str]).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                    tmp_mask[tmp_seg == name2id[None]] = 2
+            tmp_mask = tmp_mask.astype(np.float32) / 2.
+            tmp_mask = np.expand_dims(tmp_mask, axis=0)
+            tmp_mask = np.expand_dims(tmp_mask, axis=0).repeat(ob_dict[f"{cam_name}_image"].shape[0], axis=0)
+            masked_dict[f"{cam_name}_mask"] = tmp_mask
+    elif grounding_model is not None:
         # assert env.env.env.object_cfgs[0]['name'] == 'obj'
         # target_obj_name = env.env.env.object_cfgs[0]['info']['cat']
-        
-        
         
         noun_phrases = grounding_model.extract_direct_object_phrases(env._ep_lang_str)
         
@@ -342,17 +452,22 @@ def run_rollout(
         for obs_key in obs_keys:
             tmp_img = ob_dict[obs_key][0]
             tmp_img = np.uint8(tmp_img*255).transpose(1, 2, 0)
-            tmp_masked_img = None
-            for tmp_phrase in noun_phrases:
+            tmp_mask = np.zeros(tmp_img.shape[:2], dtype=np.uint8)
+            for i, tmp_phrase in enumerate(noun_phrases[:2]):
                 tmp_prompt = prompt_template.format(tmp_phrase)
-                tmp_masked_img = grounding_model.inference(tmp_prompt, tmp_img, tmp_masked_img)
-            tmp_masked_img = (tmp_masked_img.astype(np.float32) / 255.).transpose(2, 0, 1)
-            tmp_masked_img = np.expand_dims(tmp_masked_img, axis=0).repeat(ob_dict[obs_key].shape[0], axis=0)
-            masked_dict[f'masked_{obs_key}'] = tmp_masked_img
+                tmp_seg_mask = grounding_model.inference(tmp_prompt, tmp_img)
+                tmp_seg_mask = tmp_seg_mask[:, :, 0]
+                tmp_mask[tmp_seg_mask > 0] = i+1
+            # tmp_masked_img = (tmp_masked_img.astype(np.float32) / 255.).transpose(2, 0, 1)
+            
+            tmp_mask = tmp_mask.astype(np.float32) / 2.
+            tmp_mask = np.expand_dims(tmp_mask, axis=0)
+            tmp_mask = np.expand_dims(tmp_mask, axis=0).repeat(ob_dict[obs_key].shape[0], axis=0)
+            masked_dict[obs_key.replace('image', 'mask')] = tmp_mask
             # masked_dict[f'masked_{obs_key}'] = ob_dict[obs_key]
     
     for step_i in range(horizon): #LogUtils.tqdm(range(horizon)):
-        if grounding_model is not None:
+        if grounding_model is not None or args.use_gt_mask:
             ob_dict.update(masked_dict)
         # get action from policy
         if batched:
@@ -417,20 +532,6 @@ def run_rollout(
                 else:
                     frame = env.render(mode="rgb_array", height=512, width=512)
                     
-                    # cam_imgs = []
-                    # for im_name in ["robot0_eye_in_hand_image", "robot0_agentview_right_image", "robot0_agentview_left_image"]:
-                    #     im_input = TensorUtils.to_numpy(
-                    #         policy_ob_dict[im_name][0,-1]
-                    #     )
-                    #     im_ret = TensorUtils.to_numpy(
-                    #         policy_ob_dict["ret"]["obs"][im_name][0,:,-1]
-                    #     )
-                    #     im_input = np.transpose(im_input, (1, 2, 0))
-                    #     im_input = add_border_to_frame(im_input, border_size=3, color="black")
-                    #     im_ret = np.transpose(im_ret, (0, 2, 3, 1))
-                    #     im = np.concatenate((im_input, *im_ret), axis=1)
-                    #     cam_imgs.append(im)
-                    # frame = np.concatenate(cam_imgs, axis=0)
                     frame = frame.copy()
                     text1 = env._ep_lang_str
                     position1 = (10, 50)
@@ -514,7 +615,9 @@ def rollout_with_stats(
         verbose=False,
         del_envs_after_rollouts=False,
         data_logger=None,
-        grounding_model=None
+        grounding_model=None,
+        log_dir=None,
+        args=None
     ):
     """
     A helper function used in the train loop to conduct evaluation rollouts per environment
@@ -567,6 +670,8 @@ def rollout_with_stats(
         horizon_list = horizon
     else:
         horizon_list = [horizon]
+    
+    save_env_infos = {}
 
     for env, horizon in zip(envs, horizon_list):
         batched = isinstance(env, SubprocVectorEnv)
@@ -575,6 +680,30 @@ def rollout_with_stats(
             env_name = env.get_env_attr(key="name", id=0)[0]
         else:
             env_name = env.name
+        
+        # if env_name in [
+        #     "PnPCabToCounter",
+        #     "PnPCounterToCab",
+        #     "PnPCounterToSink",
+        #     "PnPSinkToCounter",
+        #     "PnPCounterToMicrowave",
+        #     # "PnPCounterToStove",
+        #     # "PnPMicrowaveToCounter",
+        #     # "CloseDoubleDoor",
+        #     # "CloseSingleDoor",
+        #     # "OpenDoubleDoor",
+        #     # "OpenSingleDoor",
+        #     # "PnPStoveToCounter",
+        #     # "OpenDrawer",
+        #     # "CloseDrawer",
+        #     # "TurnOffSinkFaucet",
+        #     # "TurnOnSinkFaucet",
+        #     # "TurnOnStove",
+        #     # "TurnSinkSpout",
+        #     # "TurnOffStove",
+        # ]:
+        #     continue
+        num_episodes = 50
 
         if video_dir is not None:
             # video is written per env
@@ -599,50 +728,91 @@ def rollout_with_stats(
             iterator = LogUtils.custom_tqdm(iterator, total=num_episodes)
 
         num_success = 0
-        for ep_i in iterator:
-            rollout_timestamp = time.time()
-            try:
-                rollout_info = run_rollout(
-                    policy=policy,
-                    env=env,
-                    horizon=horizon,
-                    render=render,
-                    use_goals=use_goals,
-                    video_writer=env_video_writer,
-                    video_skip=video_skip,
-                    terminate_on_success=terminate_on_success,
-                    grounding_model=grounding_model,
-                    ep_i=ep_i
-                )
-            except Exception as e:
-                print("Rollout exception at episode number {}!".format(ep_i))
-                print(traceback.format_exc())
-                # break
-                continue
+        if args.generate_val_data_path:
+            ep_i = 0
+            save_env_infos[env_name] = []
+            while ep_i < num_episodes:
+                print(env_name, ep_i)
+                rollout_timestamp = time.time()
+                try:
+                    rollout_info = run_rollout(
+                        policy=policy,
+                        env=env,
+                        horizon=horizon,
+                        render=render,
+                        use_goals=use_goals,
+                        video_writer=env_video_writer,
+                        video_skip=video_skip,
+                        terminate_on_success=terminate_on_success,
+                        grounding_model=grounding_model,
+                        ep_i=ep_i,
+                        args=args
+                    )
+                    save_env_infos[env_name].append(rollout_info)
+                    ep_i += 1
+                    continue
+                except Exception as e:
+                    print(traceback.format_exc())
+                    print(env_name, "Rollout exception at episode number {}!".format(ep_i))
+                    # break
+                    continue
+        else:
+            for ep_i in iterator:
+                initial_state = VAL_ENV_INFOS[env_name][ep_i]
+                rollout_timestamp = time.time()
+                try:
+                    rollout_info = run_rollout(
+                        policy=policy,
+                        env=env,
+                        horizon=horizon,
+                        initial_state=initial_state,
+                        render=render,
+                        use_goals=use_goals,
+                        video_writer=env_video_writer,
+                        video_skip=video_skip,
+                        terminate_on_success=terminate_on_success,
+                        grounding_model=grounding_model,
+                        ep_i=ep_i,
+                        args=args
+                    )
+                except Exception as e:
+                    print(traceback.format_exc())
+                    print(env_name, "Rollout exception at episode number {}!".format(ep_i))
+                    # break
+                    continue
+                    
                 
-                
-            
-            if batched:
-                rollout_info["time"] = [(time.time() - rollout_timestamp) / len(env)] * len(env)
-
-                for env_i in range(len(env)):
-                    rollout_logs.append({k: rollout_info[k][env_i] for k in rollout_info})
-                num_success += np.sum(rollout_info["Success_Rate"])
-            else:
-                rollout_info["time"] = time.time() - rollout_timestamp
-
-                rollout_logs.append(rollout_info)
-                num_success += rollout_info["Success_Rate"]
-            
-            if verbose:
                 if batched:
-                    raise NotImplementedError
-                print("Episode {}, horizon={}, num_success={}".format(ep_i + 1, horizon, num_success))
-                print(json.dumps(rollout_info, sort_keys=True, indent=4))
+                    rollout_info["time"] = [(time.time() - rollout_timestamp) / len(env)] * len(env)
+
+                    for env_i in range(len(env)):
+                        rollout_logs.append({k: rollout_info[k][env_i] for k in rollout_info})
+                    num_success += np.sum(rollout_info["Success_Rate"])
+                else:
+                    rollout_info["time"] = time.time() - rollout_timestamp
+
+                    rollout_logs.append(rollout_info)
+                    num_success += rollout_info["Success_Rate"]
+                
+                print(f"{num_success} / {ep_i+1}")
+                
+                if verbose:
+                    if batched:
+                        raise NotImplementedError
+                    print("Episode {}, horizon={}, num_success={}".format(ep_i + 1, horizon, num_success))
+                    print(json.dumps(rollout_info, sort_keys=True, indent=4))
 
         if video_dir is not None:
             # close this env's video writer (next env has it's own)
             env_video_writer.close()
+        
+        if del_envs_after_rollouts:
+            # delete the environment after use
+            del env
+            
+        if args.generate_val_data_path:
+            torch.save(save_env_infos, args.generate_val_data_path)
+            continue
 
         # average metric across all episodes
         if len(rollout_logs) > 0:
@@ -652,10 +822,6 @@ def rollout_with_stats(
             all_rollout_logs[env_name] = rollout_logs_mean
         else:
             all_rollout_logs[env_name] = {"Time_Episode": -1, "Return": -1, "Success_Rate": -1, "time": -1}
-
-        if del_envs_after_rollouts:
-            # delete the environment after use
-            del env
 
         if data_logger is not None:
             # summarize results from rollouts to tensorboard and terminal
@@ -670,9 +836,16 @@ def rollout_with_stats(
             print('Env: {}'.format(env_name))
             print(json.dumps(rollout_logs, sort_keys=True, indent=4))
 
+    if args.generate_val_data_path:
+        torch.save(save_env_infos, args.generate_val_data_path)
+    
     if video_path is not None:
         # close video writer that was used for all envs
         video_writer.close()
+    
+    if log_dir:
+        with open(os.path.join(log_dir, "all_rollout_logs.json"), 'w') as f:
+            json.dump(all_rollout_logs, f, indent=4)
 
     return all_rollout_logs, None
 
