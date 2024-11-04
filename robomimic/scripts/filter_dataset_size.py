@@ -35,8 +35,8 @@ def filter_dataset_size(hdf5_path, num_demos, input_filter_key=None, output_filt
 
     subset_lengths = create_hdf5_filter_key(hdf5_path=hdf5_path, demo_keys=subset_keys, key_name=name)
 
-    print("Total number of subset samples: {}".format(np.sum(subset_lengths)))
-    print("Average number of subset samples {}".format(np.mean(subset_lengths)))
+    # print("Total number of subset samples: {}".format(np.sum(subset_lengths)))
+    # print("Average number of subset samples {}".format(np.mean(subset_lengths)))
 
 
 if __name__ == "__main__":

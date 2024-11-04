@@ -142,10 +142,10 @@ class EnvRobosuite(EB.EnvBase):
             # get ep_meta if applicable
             ep_meta = self.env.get_ep_meta()
             self._ep_lang_str = ep_meta.get("lang", "dummy")
-            
+
             target_obj_name = self.env.target_obj_name
             unique_attr = self.env.unique_attr
-            if unique_attr != 'class' and target_obj_name in ALL_OBJ_INFOS['obj_infos']:
+            if unique_attr != 'class' and target_obj_name in ALL_OBJ_INFOS['obj_infos'] and self.env.target_obj_phrase in self._ep_lang_str:
                 unique_attrs = ALL_OBJ_INFOS['obj_infos'][target_obj_name][unique_attr]
                 if type(unique_attrs) != list:
                     unique_attrs = [unique_attrs]

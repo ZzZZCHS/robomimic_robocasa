@@ -623,15 +623,15 @@ class SequenceDataset(torch.utils.data.Dataset):
 
         # fetch observation from the dataset file
         masked_keys = [
-            "obs/masked_robot0_agentview_left_image",
-            "obs/masked_robot0_agentview_right_image",
-            "obs/masked_robot0_eye_in_hand_image"
+            "obs/robot0_agentview_left_mask",
+            "obs/robot0_agentview_right_mask",
+            "obs/robot0_eye_in_hand_mask"
         ]
         seq = dict()
         for k in keys:
             data = self.get_dataset_for_ep(demo_id, k)
             if k in masked_keys:
-                seq[k] = data[:1].repeat(seq_end_index-seq_begin_index+1, axis=0)
+                seq[k] = data[:1].repeat(seq_end_index-seq_begin_index, axis=0)
             else:
                 seq[k] = data[seq_begin_index: seq_end_index]
 

@@ -44,6 +44,8 @@ OBS_MODALITY_CLASSES = {}
 OBS_ENCODER_CORES = {"None": None}          # Include default None
 OBS_RANDOMIZERS = {"None": None}            # Include default None
 
+RESIZE_TO_128 = False
+
 
 def register_obs_key(target_class):
     assert target_class not in OBS_MODALITY_CLASSES, f"Already registered modality {target_class}!"
@@ -917,6 +919,10 @@ class ImageModality(Modality):
         Returns:
             processed_obs (np.array or torch.Tensor): processed image
         """
+        if RESIZE_TO_128:
+            assert obs.shape[-2] % 128 == 0, breakpoint()
+            m = obs.shape[-2] // 128
+            obs = obs[..., ::m, ::m, :]
         return process_frame(frame=obs, channel_dim=3, scale=255.)
 
     @classmethod
@@ -940,6 +946,7 @@ class MaskedImageModality(Modality):
     Modality for RGB image observations
     """
     name = "masked_rgb"
+    scale = 2.
 
     @classmethod
     def _default_obs_processor(cls, obs):
@@ -954,7 +961,15 @@ class MaskedImageModality(Modality):
         Returns:
             processed_obs (np.array or torch.Tensor): processed image
         """
-        return process_frame(frame=obs, channel_dim=3, scale=255.)
+        if obs.shape[-1] not in VALID_IMAGE_CHANNEL_DIMS:
+            if isinstance(obs, np.ndarray):
+                obs = np.expand_dims(obs, axis=-1)
+            if isinstance(obs, torch.Tensor):
+                obs = obs.unsqueeze(dim=-1)
+        if RESIZE_TO_128:
+            m = obs.shape[-2] // 128
+            obs = obs[..., ::m, ::m, :]
+        return process_frame(frame=obs, channel_dim=1, scale=cls.scale)
 
     @classmethod
     def _default_obs_unprocessor(cls, obs):
@@ -969,7 +984,7 @@ class MaskedImageModality(Modality):
             unprocessed_obs (np.array or torch.Tensor): image passed through
                 inverse operation of @process_frame
         """
-        return TU.to_uint8(unprocess_frame(frame=obs, channel_dim=3, scale=255.))
+        return TU.to_uint8(unprocess_frame(frame=obs, channel_dim=1, scale=cls.scale))
 
 
 class DepthModality(Modality):

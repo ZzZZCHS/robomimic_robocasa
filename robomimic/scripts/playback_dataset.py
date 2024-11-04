@@ -132,7 +132,7 @@ def playback_trajectory_with_env(
 
     for i in range(traj_len):
         if action_playback:
-            env.step(actions[i] * 0) # !!
+            env.step(actions[i])
             # if i < traj_len - 1:
             #     # check whether the actions deterministically lead to the same recorded states
             #     state_playback = env.get_state()["states"]

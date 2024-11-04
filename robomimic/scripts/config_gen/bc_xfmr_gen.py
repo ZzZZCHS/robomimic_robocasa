@@ -20,19 +20,29 @@ def make_generator_helper(args):
     if args.ckpt_mode is None:
         args.ckpt_mode = "off"
 
-    ### Multi-task training on atomic tasks ###
+
     # EVAL_TASKS = ["OpenDrawer", "CloseDrawer"] # or evaluate all tasks by setting EVAL_TASKS = None
+    # EVAL_TASKS = None
     EVAL_TASKS = ["PnPCounterToCab"]
-    # generator.add_param(
-    #     key="train.data",
-    #     name="ds",
-    #     group=123456,
-    #     values_and_names=[
-    #         # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"), # training on human datasets
-    #         # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on MimicGen datasets
-    #         (get_ds_cfg("PnPCounterToCab", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on one dataset
-    #     ]
-    # )
+    if not args.ckpt:
+        ### Multi-task training on atomic tasks ###
+        generator.add_param(
+            key="train.data",
+            name="ds",
+            group=123456,
+            values_and_names=[
+                # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"), # training on human datasets
+                # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on MimicGen datasets
+                (get_ds_cfg("PnPCounterToCab", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on one dataset
+            ]
+        )
+        generator.add_param(
+            key="experiment.rollout.enabled",
+            name="",
+            group=-1,
+            values=[args.enable_rollout],
+            value_names=[""],
+        )
 
     """
     ### Uncomment this code to train composite task policies ###
@@ -59,44 +69,44 @@ def make_generator_helper(args):
     )
     """
     
-    
-    ## Uncomment this code to evaluate checkpoints ###
-    generator.add_param(
-        key="train.data",
-        name="ds",
-        group=1389,
-        values_and_names=[
-            # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"),
-            # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"),
-            (get_ds_cfg("PnPCounterToCab", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on one dataset
-        ],
-    )
-    generator.add_param(
-        key="experiment.ckpt_path",
-        name="ckpt",
-        group=1389,
-        values_and_names=[
-            ("/ailab/user/huanghaifeng/work/robocasa_exps/expdata/robocasa/im/bc_xfmr/09-18-None/seed_123_ds_mg-3000/20240918235516/models/model_epoch_300.pth", "trained-ckpt"),
-        ],
-    )
-    generator.add_param(
-        key="experiment.rollout.warmstart",
-        name="",
-        group=-1,
-        values=[-1],
-    )
-    generator.add_param(
-        key="train.num_epochs",
-        name="",
-        group=-1,
-        values=[0],
-    )
-    generator.add_param(
-        key="train.num_data_workers",
-        name="",
-        group=-1,
-        values=[0],
-    )
+    if args.ckpt:
+        ## Uncomment this code to evaluate checkpoints ###
+        generator.add_param(
+            key="train.data",
+            name="ds",
+            group=1389,
+            values_and_names=[
+                # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"),
+                # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"),
+                (get_ds_cfg("PnPCounterToCab", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on one dataset
+            ],
+        )
+        generator.add_param(
+            key="experiment.ckpt_path",
+            name="ckpt",
+            group=1389,
+            values_and_names=[
+                (args.ckpt, "trained-ckpt"),
+            ],
+        )
+        generator.add_param(
+            key="experiment.rollout.warmstart",
+            name="",
+            group=-1,
+            values=[-1],
+        )
+        generator.add_param(
+            key="train.num_epochs",
+            name="",
+            group=-1,
+            values=[0],
+        )
+        generator.add_param(
+            key="train.num_data_workers",
+            name="",
+            group=-1,
+            values=[0],
+        )
     
 
     generator.add_param(
