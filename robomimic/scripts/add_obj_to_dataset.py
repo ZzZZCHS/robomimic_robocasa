@@ -199,9 +199,6 @@ def playback_trajectory_with_env(
     frames = []
     
     for i in range(traj_len):
-        #todo: 仅加载第一帧，不加载后面的动作
-        if video_count >= 1:
-            break
         state = env.get_state()["states"]
         if action_playback:
             obs, r, _, info = env.step(actions[i])
