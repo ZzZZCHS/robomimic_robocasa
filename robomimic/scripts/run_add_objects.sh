@@ -3,7 +3,7 @@
 # pnp
 # data_path="/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/mg/2024-07-12-04-33-29/demo_gentex_im128_randcams.hdf5"
-# data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/mg/2024-05-04-22-14-06_and_2024-05-07-07-40-17/demo_gentex_im128_randcams.hdf5"
+data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/mg/2024-05-04-22-14-06_and_2024-05-07-07-40-17/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToMicrowave/mg/2024-05-04-22-13-21_and_2024-05-07-07-41-17/demo_gentex_im128_randcams.hdf5"
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPMicrowaveToCounter/mg/2024-05-04-22-14-26_and_2024-05-07-07-41-42/demo_gentex_im128_randcams.hdf5"
@@ -29,7 +29,7 @@
 
 # stove
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_stove/TurnOnStove/mg/2024-05-08-09-20-31/demo_gentex_im128_randcams.hdf5"
-data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_stove/TurnOffStove/mg/2024-05-08-09-20-45/demo_gentex_im128_randcams.hdf5"
+# data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_stove/TurnOffStove/mg/2024-05-08-09-20-45/demo_gentex_im128_randcams.hdf5"
 
 # microwave
 # data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_microwave/TurnOnMicrowave/mg/2024-05-04-22-40-00/demo_gentex_im128_randcams.hdf5"
@@ -54,10 +54,19 @@ data_path="/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/dataset
 
 # 添加新的物体，并将第一帧的图像和GT mask保存在demo_gentex_im128_randcams_addobj_use_actions.mp4中
 # --add_obj_num参数控制新加入的物体数量，--n参数控制数据条数
+
+# python robomimic/scripts/add_obj_to_dataset.py \
+#     --dataset ${data_path} \
+#     --add_obj_num 1 \
+#     --write_video --write_first_frame --write_gt_mask \
+#     --use_actions \
+#     --save_new_data \
+#     --n 1
+
 python robomimic/scripts/add_obj_to_dataset.py \
     --dataset ${data_path} \
-    --add_obj_num 10 \
-    --write_video --write_first_frame --write_gt_mask \
+    --add_obj_num 1 \
+    --write_video --write_first_frame \
     --use_actions \
     --save_new_data \
-    --n 5
+    --n 10

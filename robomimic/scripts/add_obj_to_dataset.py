@@ -135,7 +135,9 @@ def playback_trajectory_with_env(
     zero_actions = np.zeros(actions.shape[1])
 
     # load the initial state
+    # print(f"start load the initial state from {initial_state}")
     ob_dict = env.reset_to(initial_state)
+    # print(f"load the initial_state from {initial_state}")
     
     save_images = []
     save_masks = []
@@ -158,6 +160,7 @@ def playback_trajectory_with_env(
     if action_playback:
         assert states.shape[0] == actions.shape[0]
     
+    # todo: 去除初始化的动作
     zero_actions = np.zeros(actions.shape[1])
     for i in range(50):
         env.step(zero_actions)
@@ -168,6 +171,9 @@ def playback_trajectory_with_env(
     frames = []
     
     for i in range(traj_len):
+        #todo: 仅加载第一帧，不加载后面的动作
+        if video_count >= 1:
+            break
         state = env.get_state()["states"]
         if action_playback:
             obs, r, _, info = env.step(actions[i])
@@ -188,6 +194,7 @@ def playback_trajectory_with_env(
         # video render
         if not args.write_first_frame and video_count % video_skip == 0 or \
             args.write_first_frame and video_count == 0:
+            # todo:  仅加载第一帧，不加载后面的动作
             video_img = []
             for cam_name in camera_names:
                 video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
@@ -364,7 +371,8 @@ def playback_dataset(args):
         
         env.env.add_object_num = args.add_obj_num
         success = False
-        for try_idx in range(3):
+        try_idx = 3 
+        for try_idx in range(try_idx):
             try:
                 initial_state['model'] = copy.copy(ori_model)
                 outputs, success = playback_trajectory_with_env(
@@ -396,7 +404,13 @@ def playback_dataset(args):
                 print(e)
                 print("fail to reset env, try again...")
             
-        if not success or outputs is None:
+        # todo: should not be commented
+        # if not success or outputs is None:
+        #     if tgt_f and f"data/{ep}" in tgt_f:
+        #         del tgt_f[f"data/{ep}"]
+        #     continue
+
+        if outputs is None:
             if tgt_f and f"data/{ep}" in tgt_f:
                 del tgt_f[f"data/{ep}"]
             continue
