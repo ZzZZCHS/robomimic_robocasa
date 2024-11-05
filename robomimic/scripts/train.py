@@ -34,7 +34,6 @@ import torch.nn as nn
 
 import robomimic
 import robomimic.utils.train_utils as TrainUtils
-from robomimic.utils.train_utils import VAL_ENV_INFOS
 import robomimic.utils.torch_utils as TorchUtils
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
@@ -82,9 +81,20 @@ def train(config, device, args):
         logger = PrintLogger(os.path.join(log_dir, 'log.txt'))
         sys.stdout = logger
         sys.stderr = logger
+    
+    if args.val_domain == "val":
+        TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1024/val_env_infos.pt", map_location="cpu")
+    elif args.val_domain == "val_indomain":
+        TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1024/val_env_infos_indomain.pt", map_location="cpu")
+    elif args.val_domain == "train":
+        TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1024/train_env_infos.pt", map_location="cpu")
+    else:
+        raise NotImplementedError
+        
 
     # read config to set up metadata for observation modalities (e.g. detecting rgb observations)
     ObsUtils.initialize_obs_utils_with_config(config)
+    # assert ObsUtils.MASK_CHANNEL == 1 and ObsUtils.DEPTH_CHANNEL == 1
 
     # extract the metadata and shape metadata across all datasets
     env_meta_list = []
@@ -126,7 +136,7 @@ def train(config, device, args):
     eval_env_horizon_list = []
     
     for (dataset_i, dataset_cfg) in enumerate(config.train.data):
-        if env_meta_list[dataset_i]["env_name"] not in VAL_ENV_INFOS:
+        if env_meta_list[dataset_i]["env_name"] not in TrainUtils.VAL_ENV_INFOS:
             continue
         do_eval = dataset_cfg.get("do_eval", True)
         if do_eval is not True:
@@ -138,7 +148,7 @@ def train(config, device, args):
         eval_env_horizon_list.append(horizon)
     
     # initialize grounding model
-    if "masked_rgb" in config.observation.modalities.obs and len(eval_env_meta_list) > 0 and not args.use_gt_mask:
+    if len(eval_env_meta_list) > 0 and args.use_glamm:
         grounding_model = GroundUtils(device="cuda:1")
     else:
         grounding_model = None
@@ -471,7 +481,7 @@ def main(args):
         config = config_factory(ext_cfg["algo_name"])
         # update config with external json - this will throw errors if
         # the external config has keys not present in the base algo config
-        with config.values_unlocked():
+        with config.unlocked():
             config.update(ext_cfg)
     else:
         config = config_factory(args.algo)
@@ -568,6 +578,13 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
+        "--use_glamm",
+        action="store_true",
+        default="store_true",
+        help="use glamm grounding mask"
+    )
+    
+    parser.add_argument(
         "--generate_val_data_path",
         type=str,
         default=None,
@@ -578,6 +595,12 @@ if __name__ == "__main__":
         "--image_size",
         type=int,
         default=256
+    )
+    
+    parser.add_argument(
+        "--val_domain",
+        type=str,
+        default="val"
     )
 
     args = parser.parse_args()

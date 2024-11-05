@@ -5,11 +5,12 @@ import numpy as np
 from PIL import Image
 import json
 import sys
+import bleach
+import re
 sys.path.append('/ssd/home/groups/smartbot/huanghaifeng/groundingLMM')
 # sys.path.append('/root/huanghaifeng/groundingLMM')
 # from spacy_utils import extract_noun_phrases
 import argparse
-import sys
 from transformers import AutoTokenizer, CLIPImageProcessor
 from model.GLaMM import GLaMMForCausalLM
 from model.llava import conversation as conversation_lib
@@ -26,10 +27,14 @@ import spacy
 
 
 class GroundUtils:
-    def __init__(self, device='cuda:1', mode="raw"):
+    def __init__(self, device='cuda:1', mode="joint_trained"):
         # args
         if mode == "raw":
             self.version = "/ssd/home/groups/smartbot/huanghaifeng/groundingLMM/GLaMM-FullScope"
+        elif mode == "joint_trained":
+            self.version = "/ailab/user/huanghaifeng/work/groundingLMM/output/outputs/20241101_125511_train_joint_gcg/ckpt_model_best/hf_model"
+        else:
+            raise NotImplementedError
         self.mode = mode
         self.vis_save_path = "./vis_output"
         self.precision = "bf16"
@@ -55,6 +60,9 @@ class GroundUtils:
         self.transform = transform
         
         self.nlp = spacy.load("en_core_web_sm")
+        
+        self.prompt_template = "Given a robot manipulation instruction: {}, identify the target object for manipulation and, if applicable, the target placement area."
+        self.instruction = "Please respond with interleaved segmentation masks for the corresponding parts of the answer."
         
     # def extract_noun_phrases(self, text):
     #     doc = self.nlp(text)
@@ -188,18 +196,85 @@ class GroundUtils:
         return save_img, seg_mask
 
 
-    def inference(self, input_str, input_image, draw_image=None):
+    # def inference(self, input_str, input_image, draw_image=None):
+
+    #     # print("input_str: ", input_str, "input_image: ", image_np)
+        
+    #     conv = conversation_lib.conv_templates[self.conv_type].copy()
+    #     conv.messages = []
+    #     conv_history = {'user': [], 'model': []}
+    #     conv_history["user"].append(input_str)
+
+    #     input_str = input_str.replace('&lt;', '<').replace('&gt;', '>')
+    #     prompt = input_str
+    #     prompt = f"The {DEFAULT_IMAGE_TOKEN} provides an overview of the picture." + "\n" + prompt
+    #     if self.use_mm_start_end:
+    #         replace_token = (DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN)
+    #         prompt = prompt.replace(DEFAULT_IMAGE_TOKEN, replace_token)
+
+    #     conv.append_message(conv.roles[0], prompt)
+    #     conv.append_message(conv.roles[1], "")
+    #     prompt = conv.get_prompt()
+
+    #     image_np = input_image
+    #     orig_h, orig_w = image_np.shape[:2]
+    #     original_size_list = [image_np.shape[:2]]
+
+    #     # Prepare input for Global Image Encoder
+    #     global_enc_image = self.global_enc_processor.preprocess(
+    #         image_np, return_tensors="pt")["pixel_values"][0].unsqueeze(0).to(self.device)
+    #     global_enc_image = global_enc_image.bfloat16()
+
+    #     # Prepare input for Grounding Image Encoder
+    #     image = self.transform.apply_image(image_np)
+    #     resize_list = [image.shape[:2]]
+    #     grounding_enc_image = (self.grounding_enc_processor(torch.from_numpy(image).permute(2, 0, 1).
+    #                                                 contiguous()).unsqueeze(0).to(self.device))
+    #     grounding_enc_image = grounding_enc_image.bfloat16()
+
+    #     # Prepare input for Region Image Encoder
+    #     post_h, post_w = global_enc_image.shape[1:3]
+    #     bboxes = None
+
+    #     input_ids = tokenizer_image_token(prompt, self.tokenizer, return_tensors="pt")
+    #     input_ids = input_ids.unsqueeze(0).to(self.device)
+
+    #     # Pass prepared inputs to model
+    #     output_ids, pred_masks = self.model.evaluate(
+    #         global_enc_image, grounding_enc_image, input_ids, resize_list, original_size_list, max_tokens_new=512,
+    #         bboxes=bboxes, device=self.device)
+    #     output_ids = output_ids[0][output_ids[0] != IMAGE_TOKEN_INDEX]
+
+    #     text_output = self.tokenizer.decode(output_ids, skip_special_tokens=False)
+    #     text_output = text_output.replace("\n", "").replace("  ", " ")
+    #     text_output = text_output.split("ASSISTANT: ")[-1]
+    #     # print("text_output: ", text_output)
+
+    #     save_img = None
+    #     if draw_image is None:
+    #         draw_image = image_np
+    #         # color_history = []
+    #     seg_mask = np.zeros(image_np.shape[:2], dtype=np.uint8)
+    #     if "[SEG]" in text_output:
+    #         save_img, seg_mask = self.prepare_mask(draw_image, pred_masks, text_output)
+
+    #     return seg_mask
+    
+    def inference(self, input_str, input_image):
 
         # print("input_str: ", input_str, "input_image: ", image_np)
         
+        prompt = self.prompt_template.format(input_str)
+        instruction = prompt + " " + self.instruction
+        
+        prompt = bleach.clean(prompt)
+        prompt = prompt.replace('&lt;', '<').replace('&gt;', '>')
+        
         conv = conversation_lib.conv_templates[self.conv_type].copy()
         conv.messages = []
-        conv_history = {'user': [], 'model': []}
-        conv_history["user"].append(input_str)
 
-        input_str = input_str.replace('&lt;', '<').replace('&gt;', '>')
-        prompt = input_str
-        prompt = f"The {DEFAULT_IMAGE_TOKEN} provides an overview of the picture." + "\n" + prompt
+        begin_str = f"""The {DEFAULT_IMAGE_TOKEN} provides an overview of the picture.\n"""
+        prompt = begin_str + instruction
         if self.use_mm_start_end:
             replace_token = (DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN)
             prompt = prompt.replace(DEFAULT_IMAGE_TOKEN, replace_token)
@@ -220,8 +295,7 @@ class GroundUtils:
         # Prepare input for Grounding Image Encoder
         image = self.transform.apply_image(image_np)
         resize_list = [image.shape[:2]]
-        grounding_enc_image = (self.grounding_enc_processor(torch.from_numpy(image).permute(2, 0, 1).
-                                                    contiguous()).unsqueeze(0).to(self.device))
+        grounding_enc_image = (self.grounding_enc_processor(torch.from_numpy(image).permute(2, 0, 1).contiguous()).unsqueeze(0).to(self.device))
         grounding_enc_image = grounding_enc_image.bfloat16()
 
         # Prepare input for Region Image Encoder
@@ -233,22 +307,33 @@ class GroundUtils:
 
         # Pass prepared inputs to model
         output_ids, pred_masks = self.model.evaluate(
-            global_enc_image, grounding_enc_image, input_ids, resize_list, original_size_list, max_tokens_new=512,
-            bboxes=bboxes, device=self.device)
+            global_enc_images=global_enc_image, 
+            grounding_enc_images=grounding_enc_image, 
+            input_ids=input_ids, 
+            resize_list=resize_list, 
+            orig_sizes=original_size_list, 
+            max_tokens_new=512,
+            bboxes=bboxes, 
+            device=self.device
+        )
         output_ids = output_ids[0][output_ids[0] != IMAGE_TOKEN_INDEX]
 
         text_output = self.tokenizer.decode(output_ids, skip_special_tokens=False)
         text_output = text_output.replace("\n", "").replace("  ", " ")
         text_output = text_output.split("ASSISTANT: ")[-1]
         # print("text_output: ", text_output)
+        cleaned_str = re.sub(r'<.*?>', '', text_output)
 
-        save_img = None
-        if draw_image is None:
-            draw_image = image_np
-            # color_history = []
-        seg_mask = np.zeros(image_np.shape[:2], dtype=np.uint8)
-        if "[SEG]" in text_output:
-            save_img, seg_mask = self.prepare_mask(draw_image, pred_masks, text_output)
+        pattern = re.compile(r'<p>(.*?)<\/p>')
+        phrases = pattern.findall(text_output)
+        phrases = [p.strip() for p in phrases]
 
-        return seg_mask
+        # Remove the [SEG] token
+        cleaned_str = cleaned_str.replace('[SEG]', '')
+
+        # Strip unnecessary spaces
+        cleaned_str = ' '.join(cleaned_str.split()).strip("'")
+        cleaned_str = cleaned_str.strip()
+
+        return cleaned_str, pred_masks, phrases
 

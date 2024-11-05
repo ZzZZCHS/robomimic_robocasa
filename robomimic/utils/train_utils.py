@@ -13,7 +13,7 @@ import imageio
 import numpy as np
 import traceback
 from copy import deepcopy
-from collections import OrderedDict
+from collections import OrderedDict, deque
 import cv2
 import random
 
@@ -23,12 +23,14 @@ import robomimic
 import robomimic.utils.tensor_utils as TensorUtils
 import robomimic.utils.log_utils as LogUtils
 import robomimic.utils.file_utils as FileUtils
-
+import robomimic.utils.obs_utils as ObsUtils
 from robomimic.utils.dataset import SequenceDataset, R2D2Dataset, MetaDataset
 from robomimic.envs.env_base import EnvBase
 from robomimic.envs.wrappers import EnvWrapper
 from robomimic.algo import RolloutPolicy
 from tianshou.env import SubprocVectorEnv
+
+from PIL import Image
 
 
 ENV_NAME2RANGE = {
@@ -58,7 +60,7 @@ ENV_NAME2RANGE = {
     "TurnOffMicrowave": (3, 6)
 }
 
-VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1013/train_env_infos.pt", map_location="cpu")
+VAL_ENV_INFOS = None
 
 
 def get_exp_dir(config, auto_remove_exp_dir=False):
@@ -216,7 +218,7 @@ def dataset_factory(config, obs_keys, filter_by_attribute=None, dataset_path=Non
         hdf5_normalize_obs=config.train.hdf5_normalize_obs,
         filter_by_attribute=filter_by_attribute,
         shuffled_obs_key_groups=config.train.shuffled_obs_key_groups,
-        lang_encoder=lang_encoder,
+        # lang_encoder=lang_encoder,
     )
 
     ds_kwargs["hdf5_path"] = [ds_cfg["path"] for ds_cfg in config.train.data]
@@ -234,6 +236,7 @@ def dataset_factory(config, obs_keys, filter_by_attribute=None, dataset_path=Non
         normalize_weights_by_ds_size=False,
         meta_ds_class=MetaDataset,
         meta_ds_kwargs=meta_ds_kwargs,
+        lang_encoder=lang_encoder
     )
 
     return dataset
@@ -247,6 +250,7 @@ def get_dataset(
     normalize_weights_by_ds_size,
     meta_ds_class=MetaDataset,
     meta_ds_kwargs=None,
+    lang_encoder=None
 ):
     ds_list = []
     for i in range(len(ds_weights)):
@@ -259,6 +263,7 @@ def get_dataset(
             ds_kwargs_copy[k] = ds_kwargs[k][i]
 
         ds_kwargs_copy["dataset_lang"] = ds_langs[i]
+        ds_kwargs_copy["lang_encoder"] = lang_encoder
         
         ds_list.append(ds_class(**ds_kwargs_copy))
     
@@ -399,13 +404,15 @@ def run_rollout(
         video_frames = [[] for _ in range(len(env))]
     else:
         video_frames = []
+    
+    camera_names = ["robot0_agentview_left", "robot0_agentview_right", "robot0_eye_in_hand"]
         
     if args.use_gt_mask:
         target_obj_str = env.env.env.target_obj_str
         if target_obj_str == "obj":
             target_obj_str += "_main"
         target_place_str = env.env.env.target_place_str
-        camera_names = ["robot0_agentview_left", "robot0_agentview_right", "robot0_eye_in_hand"]
+        
         masked_dict = {}
         geom2body_id_mapping = {geom_id: body_id for geom_id, body_id in enumerate(env.env.env.sim.model.geom_bodyid)}
         name2id = env.env.env.sim.model._body_name2id
@@ -439,36 +446,65 @@ def run_rollout(
             tmp_mask = np.expand_dims(tmp_mask, axis=0).repeat(ob_dict[f"{cam_name}_image"].shape[0], axis=0)
             masked_dict[f"{cam_name}_mask"] = tmp_mask
     elif grounding_model is not None:
-        # assert env.env.env.object_cfgs[0]['name'] == 'obj'
-        # target_obj_name = env.env.env.object_cfgs[0]['info']['cat']
-        
-        noun_phrases = grounding_model.extract_direct_object_phrases(env._ep_lang_str)
-        
-        prompt_template = "Can you segment {}?"
 
         obs_keys = ["robot0_agentview_left_image", "robot0_agentview_right_image", "robot0_eye_in_hand_image"]
         masked_dict = {}
         
         for obs_key in obs_keys:
             tmp_img = ob_dict[obs_key][0]
-            tmp_img = np.uint8(tmp_img*255).transpose(1, 2, 0)
-            tmp_mask = np.zeros(tmp_img.shape[:2], dtype=np.uint8)
-            for i, tmp_phrase in enumerate(noun_phrases[:2]):
-                tmp_prompt = prompt_template.format(tmp_phrase)
-                tmp_seg_mask = grounding_model.inference(tmp_prompt, tmp_img)
-                tmp_seg_mask = tmp_seg_mask[:, :, 0]
-                tmp_mask[tmp_seg_mask > 0] = i+1
-            # tmp_masked_img = (tmp_masked_img.astype(np.float32) / 255.).transpose(2, 0, 1)
-            
-            tmp_mask = tmp_mask.astype(np.float32) / 2.
+            tmp_img = np.uint8(tmp_img*255).transpose(1, 2, 0)[:, :, :3]
+            # tmp_mask = np.zeros(tmp_img.shape[:2], dtype=np.uint8)
+            result_caption, pred_masks, phrases = grounding_model.inference(env._ep_lang_str, tmp_img)
+            binary_pred_masks = pred_masks[0].cpu() > 0
+            tmp_mask = (binary_pred_masks[0].numpy()/2).astype(np.float32)
+            if binary_pred_masks.shape[0] > 1:
+                tmp_mask[binary_pred_masks[1]] = 1.
+            # tmp_mask = (tmp_mask * 255).astype(np.uint8)
+            # Image.fromarray(tmp_mask).save('tmp_mask.jpg')
+            # breakpoint()
             tmp_mask = np.expand_dims(tmp_mask, axis=0)
             tmp_mask = np.expand_dims(tmp_mask, axis=0).repeat(ob_dict[obs_key].shape[0], axis=0)
             masked_dict[obs_key.replace('image', 'mask')] = tmp_mask
-            # masked_dict[f'masked_{obs_key}'] = ob_dict[obs_key]
-    
+    else:
+        masked_dict = {}
     for step_i in range(horizon): #LogUtils.tqdm(range(horizon)):
-        if grounding_model is not None or args.use_gt_mask:
-            ob_dict.update(masked_dict)
+        for cam_name in camera_names:
+            depth_name = f"{cam_name}_depth"
+            _, depth = env.env.env.sim.render(
+                camera_name=cam_name,
+                width=args.image_size,
+                height=args.image_size,
+                depth=True
+            )
+            depth = np.expand_dims(depth[::-1], axis=0)
+            if depth_name not in env.obs_history:
+                env.obs_history[depth_name] = deque(
+                    [depth[None]] * env.num_frames,
+                    maxlen=env.num_frames
+                )
+            else:
+                env.obs_history[depth_name].append(depth[None])
+            ob_dict = env._get_stacked_obs_from_history()
+        
+        # if grounding_model is not None or args.use_gt_mask:
+        ob_dict.update(masked_dict)
+        
+        
+        if ObsUtils.MASK_CHANNEL == 1:
+            for cam_name in camera_names:
+                image_key = f"{cam_name}_image"
+                mask_key = f"{cam_name}_mask"
+                # ob_dict[image_key] = np.concatenate([ob_dict[image_key], ob_dict[mask_key]], axis=1)
+                ob_dict[image_key][:, 3:4, ...] = ob_dict[mask_key]
+                del ob_dict[mask_key]
+        if ObsUtils.DEPTH_CHANNEL == 1:
+            for cam_name in camera_names:
+                image_key = f"{cam_name}_image"
+                depth_key = f"{cam_name}_depth"
+                # ob_dict[image_key] = np.concatenate([ob_dict[image_key], ob_dict[depth_key]], axis=1)
+                ob_dict[image_key][:, -1:, ...] = ob_dict[depth_key]
+                del ob_dict[depth_key]
+        
         # get action from policy
         if batched:
             policy_ob = batchify_obs(ob_dict)
@@ -476,7 +512,7 @@ def run_rollout(
         else:
             policy_ob = ob_dict
             ac = policy(ob=policy_ob, goal=goal_dict) #, return_ob=True)
-
+        # breakpoint()
         # play action
         ob_dict, r, done, info = env.step(ac)
 
@@ -586,6 +622,7 @@ def run_rollout(
         total_reward = np.sum(rews[:end_step + 1])
         
         results["Return"] = total_reward
+        results["Contact_Rate"] = max(rews)
         results["Horizon"] = end_step + 1
         results["Success_Rate"] = float(success["task"])
 
@@ -707,7 +744,7 @@ def rollout_with_stats(
 
         if video_dir is not None:
             # video is written per env
-            video_str = "_epoch_{}.mp4".format(epoch) if epoch is not None else ".mp4" 
+            video_str = "_epoch_{}.mp4".format(epoch) if epoch is not None else ".mp4"
             video_path = os.path.join(video_dir, "{}{}".format(env_name, video_str))
             video_writer = imageio.get_writer(video_path, fps=20)
             
@@ -728,6 +765,7 @@ def rollout_with_stats(
             iterator = LogUtils.custom_tqdm(iterator, total=num_episodes)
 
         num_success = 0
+        num_contact = 0
         if args.generate_val_data_path:
             ep_i = 0
             save_env_infos[env_name] = []
@@ -793,14 +831,14 @@ def rollout_with_stats(
 
                     rollout_logs.append(rollout_info)
                     num_success += rollout_info["Success_Rate"]
+                    num_contact += rollout_info["Contact_Rate"]
                 
-                print(f"{num_success} / {ep_i+1}")
+                print(" horizon={}, num_success={}, num_contact={}".format(horizon, num_success, num_contact))
                 
-                if verbose:
-                    if batched:
-                        raise NotImplementedError
-                    print("Episode {}, horizon={}, num_success={}".format(ep_i + 1, horizon, num_success))
-                    print(json.dumps(rollout_info, sort_keys=True, indent=4))
+                # if verbose:
+                #     if batched:
+                #         raise NotImplementedError
+                #     print(json.dumps(rollout_info, sort_keys=True, indent=4))
 
         if video_dir is not None:
             # close this env's video writer (next env has it's own)

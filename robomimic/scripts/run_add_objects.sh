@@ -69,4 +69,5 @@ python robomimic/scripts/add_obj_to_dataset.py \
     --write_gt_mask \
     --save_new_data --save_obs \
     --n 1 \
-    # --use_actions \
+    --use_actions \
+    --add_obj_num 0

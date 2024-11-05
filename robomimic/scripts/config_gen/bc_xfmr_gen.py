@@ -24,18 +24,20 @@ def make_generator_helper(args):
     # EVAL_TASKS = ["OpenDrawer", "CloseDrawer"] # or evaluate all tasks by setting EVAL_TASKS = None
     # EVAL_TASKS = None
     EVAL_TASKS = ["PnPCounterToCab"]
+    ### Multi-task training on atomic tasks ###
+    generator.add_param(
+        key="train.data",
+        name="ds",
+        group=123456,
+        values_and_names=[
+            # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"), # training on human datasets
+            # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on MimicGen datasets
+            ((*get_ds_cfg("PnPCounterToCab", src="raw", eval=[], filter_key="3000_demos"), *get_ds_cfg("PnPCounterToCab", src="addobj", eval=EVAL_TASKS, filter_key="3000_demos")), "mg-3000"), # training on one dataset
+        ]
+    )
+    
     if not args.ckpt:
-        ### Multi-task training on atomic tasks ###
-        generator.add_param(
-            key="train.data",
-            name="ds",
-            group=123456,
-            values_and_names=[
-                # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"), # training on human datasets
-                # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on MimicGen datasets
-                (get_ds_cfg("PnPCounterToCab", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on one dataset
-            ]
-        )
+        
         generator.add_param(
             key="experiment.rollout.enabled",
             name="",
@@ -71,16 +73,17 @@ def make_generator_helper(args):
     
     if args.ckpt:
         ## Uncomment this code to evaluate checkpoints ###
-        generator.add_param(
-            key="train.data",
-            name="ds",
-            group=1389,
-            values_and_names=[
-                # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"),
-                # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"),
-                (get_ds_cfg("PnPCounterToCab", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on one dataset
-            ],
-        )
+        # generator.add_param(
+        #     key="train.data",
+        #     name="ds",
+        #     group=1389,
+        #     values_and_names=[
+        #         # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"),
+        #         # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"),
+        #         (get_ds_cfg("PnPCounterToCab", src="mg", eval=None, filter_key="3000_demos"), "mg-3000"), # training on one dataset
+        #         (get_ds_cfg("PnPCounterToCab", src="addobj", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on one dataset
+        #     ],
+        # )
         generator.add_param(
             key="experiment.ckpt_path",
             name="ckpt",

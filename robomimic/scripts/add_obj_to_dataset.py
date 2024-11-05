@@ -162,11 +162,13 @@ def playback_trajectory_with_env(
     video_count = 0
     
     # load the initial state
-    ob_dict = env.reset_to(initial_state)
+    obs = env.reset_to(initial_state)
     
     save_images = []
     save_masks = []
     save_obs_dict = defaultdict(list)
+    
+    # breakpoint()
     
     if args.write_gt_mask:
         target_obj_str = env.env.target_obj_str
@@ -197,26 +199,12 @@ def playback_trajectory_with_env(
     frames = []
     
     for i in range(traj_len):
-        state = env.get_state()["states"]
-        if action_playback:
-            obs, r, _, info = env.step(actions[i])
-        else:
-            obs = env.reset_to({"states" : states[i]})
-            r = env.get_reward()
-            
-        # on-screen render
-        if render:
-            env.render(mode="human", camera_name=camera_names[0])
-            
-        done = success = env.is_success()["task"]
-        done = int(done)
-        new_distr_names = [f"new_distr_{i}_main" for i in range(1, env.env.add_object_num+1)]
-        
-        # save three view images and masks
         if args.save_obs:
+            for k in obs.keys():
+                save_obs_dict[k].append(obs[k])
             for cam_name in camera_names:
-                image_name = f"{cam_name}_image"
-                save_obs_dict[image_name].append(obs[image_name])
+                # image_name = f"{cam_name}_image"
+                # save_obs_dict[image_name].append(obs[image_name])
                 
                 # save depth image
                 depth_name = f"{cam_name}_depth"
@@ -243,6 +231,21 @@ def playback_trajectory_with_env(
                         if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
                             tmp_mask[tmp_seg == name2id[None] + 1] = 2
                     save_obs_dict[mask_name].append(np.expand_dims(tmp_mask, axis=-1))
+                    
+        state = env.get_state()["states"]
+        if action_playback:
+            obs, r, _, info = env.step(actions[i])
+        else:
+            obs = env.reset_to({"states" : states[i]})
+            r = env.get_reward()
+            
+        # on-screen render
+        if render:
+            env.render(mode="human", camera_name=camera_names[0])
+            
+        done = success = env.is_success()["task"]
+        done = int(done)
+        new_distr_names = [f"new_distr_{i}_main" for i in range(1, env.env.add_object_num+1)]
         
         # video render
         if not args.write_first_frame and video_count % video_skip == 0 or \
@@ -325,6 +328,7 @@ def playback_dataset(args):
     extra_str += "_addobj"
     extra_str += "_use_actions" if args.use_actions else ""
     extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
+    extra_str += "_hhf"
     if write_video and args.video_path is None: 
         args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
     assert not (args.render and write_video) # either on-screen or video but not both
@@ -477,7 +481,7 @@ def playback_dataset(args):
                 print(e)
                 print("fail to reset env, try again...")
             
-        if not success or outputs is None:
+        if args.use_actions and (not success or outputs is None):
             continue
 
         if write_video:

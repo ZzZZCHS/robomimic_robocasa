@@ -29,8 +29,8 @@ task_dirs = [
     "/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeePressButton/mg/2024-05-04-22-21-32/"
 ]
 
-tgt_dir = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1024"
-file_name = "demo_gentex_im128_randcams_addobj_use_actions_1024.hdf5"
+tgt_dir = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105"
+file_name = "demo_gentex_im128_randcams_addobj_1105.hdf5"
 
 os.makedirs(tgt_dir, exist_ok=-True)
 
@@ -41,9 +41,13 @@ for task_dir in task_dirs:
     data_path = os.path.join(task_dir, file_name)
     if os.path.exists(data_path):
         f = h5py.File(data_path, 'r')
-        print(task_name, len(f['data']))
-        tot += len(f['data'])
-        num += 1
-        shutil.move(data_path, os.path.join(tgt_dir, f"{task_name}.hdf5"))
+        try:
+            print(task_name, len(f['data']))
+            tot += len(f['data'])
+            num += 1
+            shutil.move(data_path, os.path.join(tgt_dir, f"{task_name}.hdf5"))
+        except:
+            continue
+
 
 print(tot, num, tot / num)

@@ -87,8 +87,10 @@ do
     ELAPSED_TIME=$(($SECONDS - $START_TIME))
     echo "$(($ELAPSED_TIME/60)) min $(($ELAPSED_TIME%60)) sec"  
 
-    python robomimic/scripts/merge_hdf5_files.py \
-        --task_dir ${task_dirs[$i]} \
-        --src_filename "demo_gentex_im128_randcams_addobj_use_actions_process*.hdf5" \
-        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1024.hdf5"
+    # python robomimic/scripts/merge_hdf5_files.py \
+    #     --task_dir ${task_dirs[$i]} \
+    #     --src_filename "demo_gentex_im128_randcams_addobj_use_actions_process*_hhf.hdf5" \
+    #     --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1105.hdf5"
+    
+    # python robomimic/scripts/move_files.py
 done
