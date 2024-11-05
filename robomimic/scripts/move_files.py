@@ -30,7 +30,7 @@ task_dirs = [
 ]
 
 tgt_dir = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105"
-file_name = "demo_gentex_im128_randcams_addobj_1105.hdf5"
+file_name = "demo_gentex_im128_randcams_addobj_use_actions_1105.hdf5"
 
 os.makedirs(tgt_dir, exist_ok=-True)
 
