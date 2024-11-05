@@ -81,15 +81,15 @@ def train(config, device, args):
         logger = PrintLogger(os.path.join(log_dir, 'log.txt'))
         sys.stdout = logger
         sys.stderr = logger
-    
-    if args.val_domain == "val":
-        TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1024/val_env_infos.pt", map_location="cpu")
-    elif args.val_domain == "val_indomain":
-        TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1024/val_env_infos_indomain.pt", map_location="cpu")
-    elif args.val_domain == "train":
-        TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1024/train_env_infos.pt", map_location="cpu")
-    else:
-        raise NotImplementedError
+    if config.experiment.rollout.enabled:
+        if args.val_domain == "val":
+            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105/val_env_infos.pt", map_location="cpu")
+        elif args.val_domain == "val_indomain":
+            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105/val_env_infos_indomain.pt", map_location="cpu")
+        elif args.val_domain == "train":
+            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105/train_env_infos.pt", map_location="cpu")
+        else:
+            raise NotImplementedError
         
 
     # read config to set up metadata for observation modalities (e.g. detecting rgb observations)

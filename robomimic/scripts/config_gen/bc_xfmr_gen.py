@@ -25,6 +25,9 @@ def make_generator_helper(args):
     # EVAL_TASKS = None
     EVAL_TASKS = ["PnPCounterToCab"]
     ### Multi-task training on atomic tasks ###
+    dataset_cfgs = (*get_ds_cfg("PnPCounterToCab", src="addobj", eval=EVAL_TASKS, filter_key="3000_demos"), )
+    if args.add_raw_data:
+        dataset_cfgs += (*get_ds_cfg("PnPCounterToCab", src="raw", eval=[], filter_key="3000_demos"), )
     generator.add_param(
         key="train.data",
         name="ds",
@@ -32,7 +35,7 @@ def make_generator_helper(args):
         values_and_names=[
             # (get_ds_cfg("single_stage", src="human", eval=EVAL_TASKS, filter_key="50_demos"), "human-50"), # training on human datasets
             # (get_ds_cfg("single_stage", src="mg", eval=EVAL_TASKS, filter_key="3000_demos"), "mg-3000"), # training on MimicGen datasets
-            ((*get_ds_cfg("PnPCounterToCab", src="raw", eval=[], filter_key="3000_demos"), *get_ds_cfg("PnPCounterToCab", src="addobj", eval=EVAL_TASKS, filter_key="3000_demos")), "mg-3000"), # training on one dataset
+            (dataset_cfgs, "mg-3000"), # training on one dataset
         ]
     )
     

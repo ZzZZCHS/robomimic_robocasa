@@ -648,6 +648,11 @@ def get_argparser():
         type=int,
         default=None
     )
+    
+    parser.add_argument(
+        "--add_raw_data",
+        action="store_true"
+    )
 
     return parser
 
