@@ -34,7 +34,7 @@ def merge_hdf5_files(args):
             print(filename)
             print(e)
             print(traceback.format_exc())
-            breakpoint()
+            # breakpoint()
             if src_f:
                 src_f.close()
     total_len = 0
