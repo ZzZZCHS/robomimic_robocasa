@@ -194,7 +194,10 @@ class EnvRobosuite(EB.EnvBase):
             for obj_cfg in ep_meta['object_cfgs']:
                 if obj_cfg['name'] != self.env.target_obj_str:
                     continue
-                target_obj_name = obj_cfg['info']['mjcf_path'].split('/')[-2]
+                # target_obj_name = info['mjcf_path'].split('/')[-2]
+                target_obj_source = obj_cfg['info']['mjcf_path'].split('/')[-4]
+                target_obj_id = obj_cfg['info']['mjcf_path'].split('/')[-2]
+                target_obj_name = f"{target_obj_source}_{target_obj_id}"
             self.env.target_obj_name = target_obj_name
             
             self.env.no_placement = True

@@ -443,7 +443,8 @@ def playback_dataset(args):
         actions = f_ep["actions"][()]
         
         success = False
-        for try_idx in range(3):
+        try_idx = 3 
+        for try_idx in range(try_idx):
             try:
                 if not args.use_actions:
                     env.env.add_object_num = 0
@@ -481,7 +482,7 @@ def playback_dataset(args):
                 print(e)
                 print("fail to reset env, try again...")
             
-        if args.use_actions and (not success or outputs is None):
+        if not success or outputs is None:
             continue
 
         if write_video:
