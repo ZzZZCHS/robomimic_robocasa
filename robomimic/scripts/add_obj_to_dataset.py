@@ -163,7 +163,7 @@ def playback_trajectory_with_env(
     
     # load the initial state
     # print(f"start load the initial state from {initial_state}")
-    ob_dict = env.reset_to(initial_state)
+    obs = env.reset_to(initial_state)
     # print(f"load the initial_state from {initial_state}")
     
     save_images = []
@@ -199,6 +199,39 @@ def playback_trajectory_with_env(
     frames = []
     
     for i in range(traj_len):
+        if args.save_obs:
+            for k in obs.keys():
+                save_obs_dict[k].append(obs[k])
+            for cam_name in camera_names:
+                # image_name = f"{cam_name}_image"
+                # save_obs_dict[image_name].append(obs[image_name])
+
+                # save depth image
+                depth_name = f"{cam_name}_depth"
+                _, depth = env.env.sim.render(
+                    camera_name=cam_name,
+                    width=args.camera_width,
+                    height=args.camera_height,
+                    depth=True
+                )
+                depth = np.expand_dims(depth[::-1], axis=-1)
+                save_obs_dict[depth_name].append(depth)
+                # Image.fromarray(((depth-depth.min())/(depth.max()-depth.min())*255).astype(np.uint8)).save('tmp.jpg')
+
+                # save segmentation mask
+                if video_count == 0:
+                    mask_name = f"{cam_name}_mask"
+                    tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
+                    tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
+                    for tmp_target_obj_str in target_obj_str.split('/'):
+                        tmp_mask[tmp_seg == name2id[tmp_target_obj_str] + 1] = 1
+                    if target_place_str:
+                        tmp_mask[tmp_seg == name2id[target_place_str] + 1] = 2
+                        # a special case
+                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and None in name2id and name2id[target_place_str] == name2id[None] - 1:
+                            tmp_mask[tmp_seg == name2id[None] + 1] = 2
+                    save_obs_dict[mask_name].append(np.expand_dims(tmp_mask, axis=-1))
+
         state = env.get_state()["states"]
         if action_playback:
             obs, r, _, info = env.step(actions[i])
@@ -214,42 +247,9 @@ def playback_trajectory_with_env(
         done = int(done)
         new_distr_names = [f"new_distr_{i}_main" for i in range(1, env.env.add_object_num+1)]
         
-        # save three view images and masks
-        if args.save_obs:
-            for cam_name in camera_names:
-                image_name = f"{cam_name}_image"
-                save_obs_dict[image_name].append(obs[image_name])
-                
-                # save depth image
-                depth_name = f"{cam_name}_depth"
-                _, depth = env.env.sim.render(
-                    camera_name=cam_name,
-                    width=args.camera_width,
-                    height=args.camera_height,
-                    depth=True
-                )
-                depth = np.expand_dims(depth[::-1], axis=-1)
-                save_obs_dict[depth_name].append(depth)
-                # Image.fromarray(((depth-depth.min())/(depth.max()-depth.min())*255).astype(np.uint8)).save('tmp.jpg')
-                
-                # save segmentation mask
-                if video_count == 0:
-                    mask_name = f"{cam_name}_mask"
-                    tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
-                    tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
-                    for tmp_target_obj_str in target_obj_str.split('/'):
-                        tmp_mask[tmp_seg == name2id[tmp_target_obj_str] + 1] = 1
-                    if target_place_str:
-                        tmp_mask[tmp_seg == name2id[target_place_str] + 1] = 2
-                        # a special case
-                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
-                            tmp_mask[tmp_seg == name2id[None] + 1] = 2
-                    save_obs_dict[mask_name].append(np.expand_dims(tmp_mask, axis=-1))
-        
         # video render
         if not args.write_first_frame and video_count % video_skip == 0 or \
             args.write_first_frame and video_count == 0:
-            # todo:  仅加载第一帧，不加载后面的动作
             video_img = []
             for cam_name in camera_names:
                 video_img.append(env.render(mode="rgb_array", height=args.camera_height, width=args.camera_width, camera_name=cam_name))
@@ -268,7 +268,7 @@ def playback_trajectory_with_env(
                     if target_place_str:
                         seg_rgb[tmp_seg == name2id[target_place_str] + 1, 2] = 255
                         # a special case
-                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and None in name2id and name2id[target_place_str] == name2id[None] - 1:
                             seg_rgb[tmp_seg == name2id[None] + 1, 2] = 255
                     seg_img.append(seg_rgb)
                 if len(save_masks) == 0:
@@ -333,7 +333,10 @@ def playback_dataset(args):
     assert not (args.render and write_video) # either on-screen or video but not both
     
     if args.save_new_data:
-        tgt_dataset_path = args.dataset.split(".hdf5")[0] + extra_str + ".hdf5"
+        if args.tgt_dataset_path is None:
+            tgt_dataset_path = args.dataset.split(".hdf5")[0] + extra_str + ".hdf5"
+        else:
+            tgt_dataset_path = args.tgt_dataset_path
         # tgt_data_info_path = args.dataset.split(".hdf5")[0] + extra_str + ".pt"
         if os.path.exists(tgt_dataset_path):
             os.remove(tgt_dataset_path)
@@ -482,7 +485,7 @@ def playback_dataset(args):
                 print("fail to reset env, try again...")
             
 
-        if not success or outputs is None:
+        if args.use_actions and (not success or outputs is None):
             continue
 
         if write_video:
@@ -600,6 +603,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="(optional) render trajectories to this video file path",
+    )
+
+    parser.add_argument(
+        "--tgt_dataset_path",
+        type=str,
+        default=None
     )
 
     # How often to write video frames during the playback
