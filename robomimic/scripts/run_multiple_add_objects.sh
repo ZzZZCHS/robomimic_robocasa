@@ -27,8 +27,6 @@ task_dirs=(
     "/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeePressButton/mg/2024-05-04-22-21-32/"
 )
 
-# data_path="/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33/demo_gentex_im128_randcams.hdf5"
-
 
 ST_I=$1
 ED_I=$2
@@ -89,6 +87,8 @@ do
 
     python robomimic/scripts/merge_hdf5_files.py \
         --task_dir ${task_dirs[$i]} \
-        --src_filename "demo_gentex_im128_randcams_addobj_use_actions_process*.hdf5" \
-        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1024.hdf5"
+        --src_filename "demo_gentex_im128_randcams_addobj_use_actions_process*_hhf.hdf5" \
+        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1105.hdf5"
+    
+    python robomimic/scripts/move_files.py
 done

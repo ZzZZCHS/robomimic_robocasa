@@ -6,6 +6,7 @@ from robomimic.scripts.conversion.extract_action_dict import extract_action_dict
 from robomimic.scripts.filter_dataset_size import filter_dataset_size
 import torch
 import argparse
+import traceback
 
 # task_dir = '/ailab/user/huanghaifeng/work/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/mg/2024-05-04-22-12-27_and_2024-05-07-07-39-33'
 # src_file_path = os.path.join(task_dir, 'demo_gentex_im128_randcams_cp_addobj_use_actions_process*.hdf5')
@@ -28,11 +29,14 @@ def merge_hdf5_files(args):
                         for demo_id in src_f[name]:
                             # new_demo_id = f"demo_{int(demo_id.split('_')[1])+st_idx}"
                             src_f.copy(f"{name}/{demo_id}", tgt_f, name=f"{name}/{demo_id}")
-        except:
+            os.remove(filename)
+        except Exception as e:
             print(filename)
+            print(e)
+            print(traceback.format_exc())
+            # breakpoint()
             if src_f:
                 src_f.close()
-        os.remove(filename)
     total_len = 0
     for demo_id in tgt_f['data'].keys():
         total_len += tgt_f[f"data/{demo_id}/actions"].shape[0]

@@ -113,21 +113,53 @@ def set_env_settings(generator, args):
         )
         if args.addmask:
             generator.add_param(
-                key="observation.encoder.masked_rgb.core_class",
+                key="observation.addmask",
                 name="",
                 group=-1,
-                values=[
-                    "VisualCoreLanguageConditioned"
-                ],
+                values=[True]
             )
+            if not args.add_by_channel:
+                generator.add_param(
+                    key="observation.encoder.masked_rgb.core_class",
+                    name="",
+                    group=-1,
+                    values=[
+                        "VisualCoreLanguageConditioned"
+                    ],
+                )
+                generator.add_param(
+                    key="observation.encoder.masked_rgb.core_kwargs.backbone_class",
+                    name="",
+                    group=-1,
+                    values=[
+                        "ResNet18ConvFiLM"
+                    ],
+                )
+            
+        if args.adddepth:
             generator.add_param(
-                key="observation.encoder.masked_rgb.core_kwargs.backbone_class",
+                key="observation.adddepth",
                 name="",
                 group=-1,
-                values=[
-                    "ResNet18ConvFiLM"
-                ],
+                values=[True]
             )
+            if not args.add_by_channel:
+                generator.add_param(
+                    key="observation.encoder.depth.core_class",
+                    name="",
+                    group=-1,
+                    values=[
+                        "VisualCoreLanguageConditioned"
+                    ],
+                )
+                generator.add_param(
+                    key="observation.encoder.depth.core_kwargs.backbone_class",
+                    name="",
+                    group=-1,
+                    values=[
+                        "ResNet18ConvFiLM"
+                    ],
+                )
 
         env_kwargs = {
             "generative_textures": None,
@@ -159,9 +191,19 @@ def set_env_settings(generator, args):
             hidename=True,
         )
         
-        if args.addmask:
+        if args.addmask and not args.add_by_channel:
             generator.add_param(
                 key="observation.encoder.masked_rgb.obs_randomizer_kwargs",
+                name="obsrandargs",
+                group=-1,
+                values=[
+                    {"crop_height": args.crop_size, "crop_width": args.crop_size, "num_crops": 1, "pos_enc": False},
+                ],
+                hidename=True,
+            )
+        if args.adddepth and not args.add_by_channel:
+            generator.add_param(
+                key="observation.encoder.depth.obs_randomizer_kwargs",
                 name="obsrandargs",
                 group=-1,
                 values=[
@@ -207,7 +249,7 @@ def set_env_settings(generator, args):
                      "robot0_eye_in_hand_image"]
                 ],
             )
-            if args.addmask:
+            if args.addmask and not args.add_by_channel:
                 generator.add_param(
                     key="observation.modalities.obs.masked_rgb",
                     name="",
@@ -216,6 +258,17 @@ def set_env_settings(generator, args):
                         ["robot0_agentview_left_mask",
                          "robot0_agentview_right_mask",
                          "robot0_eye_in_hand_mask"]
+                    ],
+                )
+            if args.adddepth and not args.add_by_channel:
+                generator.add_param(
+                    key="observation.modalities.obs.depth",
+                    name="",
+                    group=-1,
+                    values=[
+                        ["robot0_agentview_left_depth",
+                         "robot0_agentview_right_depth",
+                         "robot0_eye_in_hand_depth"]
                     ],
                 )
         else:
@@ -296,6 +349,25 @@ def set_mod_settings(generator, args):
                 name="",
                 group=-1,
                 values=[100],
+            )
+        if args.context_length is not None:
+            generator.add_param(
+                key="train.seq_length",
+                name="",
+                group=-1,
+                values=[args.context_length]
+            )
+            generator.add_param(
+                key="train.frame_stack",
+                name="",
+                group=-1,
+                values=[args.context_length]
+            )
+            generator.add_param(
+                key="algo.transformer.context_length",
+                name="",
+                group=-1,
+                values=[args.context_length]
             )
 
 
@@ -545,6 +617,11 @@ def get_argparser():
     )
     
     parser.add_argument(
+        "--adddepth",
+        action="store_true"
+    )
+    
+    parser.add_argument(
         "--ckpt",
         type=str,
         default=None
@@ -559,6 +636,22 @@ def get_argparser():
         "--crop_size",
         type=int,
         default=232
+    )
+    
+    parser.add_argument(
+        "--add_by_channel",
+        action="store_true"
+    )
+    
+    parser.add_argument(
+        "--context_length",
+        type=int,
+        default=None
+    )
+    
+    parser.add_argument(
+        "--add_raw_data",
+        action="store_true"
     )
 
     return parser
@@ -641,7 +734,7 @@ def get_ds_cfg(
     ):
     from robocasa.utils.dataset_registry import get_ds_path, SINGLE_STAGE_TASK_DATASETS, MULTI_STAGE_TASK_DATASETS
     
-    assert src in ["human", "mg"]
+    assert src in ["human", "mg", "addobj", "raw"]
     all_datasets = {}
     all_datasets.update(SINGLE_STAGE_TASK_DATASETS)
     all_datasets.update(MULTI_STAGE_TASK_DATASETS)

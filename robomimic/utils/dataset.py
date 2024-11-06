@@ -209,6 +209,9 @@ class SequenceDataset(torch.utils.data.Dataset):
         else:
             self.demos = list(self.hdf5_file["data"].keys())
 
+        # !!!
+        # self.demos = self.demos[1:2]
+        
         # sort demo keys
         inds = np.argsort([int(elem[5:]) for elem in self.demos])
         self.demos = [self.demos[i] for i in inds]
@@ -269,7 +272,10 @@ class SequenceDataset(torch.utils.data.Dataset):
             for ep_batch in tqdm(np.array_split(self.demos, int(math.ceil(len(self.demos) / 64)))):
                 # get language embedding
                 lang_batch = [self._demo_id_to_demo_lang_str[ep] for ep in ep_batch]
-                emb_batch = self.lang_encoder.get_lang_emb(lang_batch)
+                if isinstance(self.lang_encoder, LangUtils.LangEncoder):
+                    emb_batch = self.lang_encoder.get_lang_emb(lang_batch)
+                else:
+                    emb_batch = self.lang_encoder(lang_batch)
                 # emb_batch = torch.randn(50, 768)
                 emb_batch = TensorUtils.to_numpy(emb_batch)
                 for batch_idx, ep in enumerate(ep_batch):
@@ -478,6 +484,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         """
         Fetch dataset sequence @index (inferred through internal index map), using the getitem_cache if available.
         """
+        # index = 0 # !!!!
         if self.hdf5_cache_mode == "all":
             output = self.getitem_cache[index]
         else:
@@ -627,6 +634,11 @@ class SequenceDataset(torch.utils.data.Dataset):
             "obs/robot0_agentview_right_mask",
             "obs/robot0_eye_in_hand_mask"
         ]
+        depth_keys = [
+            "obs/robot0_agentview_left_depth",
+            "obs/robot0_agentview_right_depth",
+            "obs/robot0_eye_in_hand_depth"
+        ]
         seq = dict()
         for k in keys:
             data = self.get_dataset_for_ep(demo_id, k)
@@ -634,6 +646,25 @@ class SequenceDataset(torch.utils.data.Dataset):
                 seq[k] = data[:1].repeat(seq_end_index-seq_begin_index, axis=0)
             else:
                 seq[k] = data[seq_begin_index: seq_end_index]
+        
+        if ObsUtils.MASK_CHANNEL == 1:
+            for k in masked_keys:
+                image_key = k.replace('_mask', '_image')
+                if image_key not in keys:
+                    continue
+                data = self.get_dataset_for_ep(demo_id, k)
+                mask_data = data[:1].repeat(seq_end_index-seq_begin_index, axis=0) * 127
+                seq[image_key] = np.concatenate([seq[image_key], mask_data], axis=-1)
+        
+        if ObsUtils.DEPTH_CHANNEL == 1:
+            for k in depth_keys:
+                image_key = k.replace('_depth', '_image')
+                if image_key not in keys:
+                    continue
+                data = self.get_dataset_for_ep(demo_id, k)
+                depth_data = data[seq_begin_index: seq_end_index] * 255
+                depth_data = depth_data.astype(np.uint8)
+                seq[image_key] = np.concatenate([seq[image_key], depth_data], axis=-1)
 
         seq = TensorUtils.pad_sequence(seq, padding=(seq_begin_pad, seq_end_pad), pad_same=True)
         pad_mask = np.array([0] * seq_begin_pad + [1] * (seq_end_index - seq_begin_index) + [0] * seq_end_pad)
