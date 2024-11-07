@@ -327,7 +327,7 @@ def playback_dataset(args):
     extra_str += "_addobj"
     extra_str += "_use_actions" if args.use_actions else ""
     extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
-    extra_str += "_hhf"
+    extra_str += "_cxy"
     if write_video and args.video_path is None: 
         args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
     assert not (args.render and write_video) # either on-screen or video but not both
