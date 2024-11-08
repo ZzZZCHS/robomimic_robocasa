@@ -29,8 +29,8 @@ task_dirs = [
     "/ssd/home/groups/smartbot/huanghaifeng/robocasa_exps/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeePressButton/mg/2024-05-04-22-21-32/"
 ]
 
-tgt_dir = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105"
-file_name = "demo_gentex_im128_randcams_addobj_use_actions_1105.hdf5"
+tgt_dir = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1107"
+file_name = "demo_gentex_im128_randcams_addobj_use_actions_hhf.hdf5"
 
 os.makedirs(tgt_dir, exist_ok=-True)
 
@@ -50,4 +50,4 @@ for task_dir in task_dirs:
             continue
 
 
-print(tot, num, tot / num)
+print(tot, num, tot / (num + 0.0001))

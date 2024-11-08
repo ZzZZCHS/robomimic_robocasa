@@ -64,11 +64,11 @@ do
         CUDA_VISIBLE_DEVICES=$GPU_ID python robomimic/scripts/add_obj_to_dataset.py \
             --dataset ${data_path} \
             --write_gt_mask \
-            --use_actions \
             --save_new_data --save_obs \
             --interval_left $START_INDEX \
             --interval_right $END_INDEX \
             --global_process_id $PROCESS_ID \
+            --use_actions \
             > logs/process_$PROCESS_ID.log 2>&1 &
 
         PID=$!
@@ -88,7 +88,7 @@ do
     python robomimic/scripts/merge_hdf5_files.py \
         --task_dir ${task_dirs[$i]} \
         --src_filename "demo_gentex_im128_randcams_addobj_use_actions_process*_hhf.hdf5" \
-        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_1105.hdf5"
+        --tgt_filename "demo_gentex_im128_randcams_addobj_use_actions_hhf.hdf5"
     
     python robomimic/scripts/move_files.py
 done

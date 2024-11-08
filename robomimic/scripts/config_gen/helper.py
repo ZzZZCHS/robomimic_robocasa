@@ -653,6 +653,11 @@ def get_argparser():
         "--add_raw_data",
         action="store_true"
     )
+    
+    parser.add_argument(
+        "--add_real_data",
+        action="store_true"
+    )
 
     return parser
 

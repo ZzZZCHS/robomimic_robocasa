@@ -191,7 +191,7 @@ def playback_trajectory_with_env(
     if env.env.add_object_num > 0:
         zero_actions = np.zeros(actions.shape[1])
         for i in range(50):
-            env.step(zero_actions)
+            obs, _, _, _ = env.step(zero_actions)
 
     success = False
     outputs = defaultdict(list)
@@ -207,15 +207,15 @@ def playback_trajectory_with_env(
                 # save_obs_dict[image_name].append(obs[image_name])
                 
                 # save depth image
-                depth_name = f"{cam_name}_depth"
-                _, depth = env.env.sim.render(
-                    camera_name=cam_name,
-                    width=args.camera_width,
-                    height=args.camera_height,
-                    depth=True
-                )
-                depth = np.expand_dims(depth[::-1], axis=-1)
-                save_obs_dict[depth_name].append(depth)
+                # depth_name = f"{cam_name}_depth"
+                # _, depth = env.env.sim.render(
+                #     camera_name=cam_name,
+                #     width=args.camera_width,
+                #     height=args.camera_height,
+                #     depth=True
+                # )
+                # depth = np.expand_dims(depth[::-1], axis=-1)
+                # save_obs_dict[depth_name].append(depth)
                 # Image.fromarray(((depth-depth.min())/(depth.max()-depth.min())*255).astype(np.uint8)).save('tmp.jpg')
                 
                 # save segmentation mask
@@ -228,7 +228,7 @@ def playback_trajectory_with_env(
                     if target_place_str:
                         tmp_mask[tmp_seg == name2id[target_place_str] + 1] = 2
                         # a special case
-                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and None in name2id and name2id[target_place_str] == name2id[None] - 1:
                             tmp_mask[tmp_seg == name2id[None] + 1] = 2
                     save_obs_dict[mask_name].append(np.expand_dims(tmp_mask, axis=-1))
                     
@@ -268,7 +268,7 @@ def playback_trajectory_with_env(
                     if target_place_str:
                         seg_rgb[tmp_seg == name2id[target_place_str] + 1, 2] = 255
                         # a special case
-                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and name2id[target_place_str] == name2id[None] - 1:
+                        if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and None in name2id and name2id[target_place_str] == name2id[None] - 1:
                             seg_rgb[tmp_seg == name2id[None] + 1, 2] = 255
                     seg_img.append(seg_rgb)
                 if len(save_masks) == 0:

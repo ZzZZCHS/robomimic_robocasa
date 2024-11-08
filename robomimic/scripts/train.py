@@ -83,11 +83,13 @@ def train(config, device, args):
         sys.stderr = logger
     if config.experiment.rollout.enabled:
         if args.val_domain == "val":
-            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105/val_env_infos.pt", map_location="cpu")
+            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_data/val_env_infos.pt", map_location="cpu")
         elif args.val_domain == "val_indomain":
-            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105/val_env_infos_indomain.pt", map_location="cpu")
+            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_data/val_env_infos_indomain.pt", map_location="cpu")
         elif args.val_domain == "train":
-            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105/train_env_infos.pt", map_location="cpu")
+            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_data/train_env_infos.pt", map_location="cpu")
+        elif args.val_domain == "origin":
+            TrainUtils.VAL_ENV_INFOS = torch.load("/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_data/val_env_infos_origin.pt", map_location="cpu")
         else:
             raise NotImplementedError
         
@@ -136,7 +138,7 @@ def train(config, device, args):
     eval_env_horizon_list = []
     
     for (dataset_i, dataset_cfg) in enumerate(config.train.data):
-        if env_meta_list[dataset_i]["env_name"] not in TrainUtils.VAL_ENV_INFOS:
+        if TrainUtils.VAL_ENV_INFOS and env_meta_list[dataset_i]["env_name"] not in TrainUtils.VAL_ENV_INFOS:
             continue
         do_eval = dataset_cfg.get("do_eval", True)
         if do_eval is not True:
@@ -148,7 +150,7 @@ def train(config, device, args):
         eval_env_horizon_list.append(horizon)
     
     # initialize grounding model
-    if len(eval_env_meta_list) > 0 and args.use_glamm:
+    if config.experiment.rollout.enabled and len(eval_env_meta_list) > 0 and args.use_glamm:
         grounding_model = GroundUtils(device="cuda:1")
     else:
         grounding_model = None
@@ -580,7 +582,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_glamm",
         action="store_true",
-        default="store_true",
         help="use glamm grounding mask"
     )
     

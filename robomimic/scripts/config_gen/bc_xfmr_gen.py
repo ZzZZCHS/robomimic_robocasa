@@ -28,6 +28,7 @@ def make_generator_helper(args):
     dataset_cfgs = (*get_ds_cfg("PnPCounterToCab", src="addobj", eval=EVAL_TASKS, filter_key="3000_demos"), )
     if args.add_raw_data:
         dataset_cfgs += (*get_ds_cfg("PnPCounterToCab", src="raw", eval=[], filter_key="3000_demos"), )
+    
     generator.add_param(
         key="train.data",
         name="ds",

@@ -210,7 +210,7 @@ class SequenceDataset(torch.utils.data.Dataset):
             self.demos = list(self.hdf5_file["data"].keys())
 
         # !!!
-        # self.demos = self.demos[1:2]
+        # self.demos = self.demos[:1]
         
         # sort demo keys
         inds = np.argsort([int(elem[5:]) for elem in self.demos])
@@ -426,8 +426,8 @@ class SequenceDataset(torch.utils.data.Dataset):
         ep = self.demos[0]
         action_traj = self.get_action_traj(ep)
         action_stats = _compute_traj_stats(action_traj)
-        print("SequenceDataset: normalizing actions...")
-        for ep in LogUtils.custom_tqdm(self.demos[1:]):
+        # print("SequenceDataset: normalizing actions...")
+        for ep in self.demos[1:]:
             action_traj = self.get_action_traj(ep)
             traj_stats = _compute_traj_stats(action_traj)
             action_stats = _aggregate_traj_stats(action_stats, traj_stats)
