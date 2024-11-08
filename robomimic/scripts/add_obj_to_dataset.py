@@ -162,6 +162,7 @@ def playback_trajectory_with_env(
     video_count = 0
     
     # load the initial state
+
     obs = env.reset_to(initial_state)
     
     save_images = []
@@ -205,7 +206,6 @@ def playback_trajectory_with_env(
             for cam_name in camera_names:
                 # image_name = f"{cam_name}_image"
                 # save_obs_dict[image_name].append(obs[image_name])
-                
                 # save depth image
                 # depth_name = f"{cam_name}_depth"
                 # _, depth = env.env.sim.render(
@@ -217,7 +217,7 @@ def playback_trajectory_with_env(
                 # depth = np.expand_dims(depth[::-1], axis=-1)
                 # save_obs_dict[depth_name].append(depth)
                 # Image.fromarray(((depth-depth.min())/(depth.max()-depth.min())*255).astype(np.uint8)).save('tmp.jpg')
-                
+
                 # save segmentation mask
                 if video_count == 0:
                     mask_name = f"{cam_name}_mask"
@@ -231,7 +231,6 @@ def playback_trajectory_with_env(
                         if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and None in name2id and name2id[target_place_str] == name2id[None] - 1:
                             tmp_mask[tmp_seg == name2id[None] + 1] = 2
                     save_obs_dict[mask_name].append(np.expand_dims(tmp_mask, axis=-1))
-                    
         state = env.get_state()["states"]
         if action_playback:
             obs, r, _, info = env.step(actions[i])
@@ -328,13 +327,16 @@ def playback_dataset(args):
     extra_str += "_addobj"
     extra_str += "_use_actions" if args.use_actions else ""
     extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
-    extra_str += "_hhf"
+    extra_str += "_cxy"
     if write_video and args.video_path is None: 
         args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
     assert not (args.render and write_video) # either on-screen or video but not both
     
     if args.save_new_data:
-        tgt_dataset_path = args.dataset.split(".hdf5")[0] + extra_str + ".hdf5"
+        if args.tgt_dataset_path is None:
+            tgt_dataset_path = args.dataset.split(".hdf5")[0] + extra_str + ".hdf5"
+        else:
+            tgt_dataset_path = args.tgt_dataset_path
         # tgt_data_info_path = args.dataset.split(".hdf5")[0] + extra_str + ".pt"
         if os.path.exists(tgt_dataset_path):
             os.remove(tgt_dataset_path)
@@ -482,6 +484,7 @@ def playback_dataset(args):
                 print(e)
                 print("fail to reset env, try again...")
             
+
         if not success or outputs is None:
             continue
 
@@ -600,6 +603,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="(optional) render trajectories to this video file path",
+    )
+
+    parser.add_argument(
+        "--tgt_dataset_path",
+        type=str,
+        default=None
     )
 
     # How often to write video frames during the playback
