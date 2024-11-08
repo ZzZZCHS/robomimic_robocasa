@@ -199,6 +199,18 @@ def playback_trajectory_with_env(
 
     frames = []
     
+    obj_infos = {}
+    for obj in env.env.objects.values():
+        obj_name = obj.name
+        obj_qpos = env.env.sim.data.get_joint_qpos(obj.joints[0]).tolist()
+        obj_folder = obj.folder
+        obj_id = '_'.join([obj_folder.split('/')[-3], obj_folder.split('/')[-1]])
+        obj_infos[obj_name] = {
+            'qpos': obj_qpos,
+            'id': obj_id
+        }
+    # breakpoint()
+    
     for i in range(traj_len):
         if args.save_obs:
             for k in obs.keys():
@@ -314,7 +326,8 @@ def playback_trajectory_with_env(
         "new_model": env.env.sim.model.get_xml(),
         "new_ep_meta": env.env.get_ep_meta(),
         "frames": frames,
-        "save_obs_dict": save_obs_dict
+        "save_obs_dict": save_obs_dict,
+        "obj_infos": obj_infos
     })
     print("Success:", success)
     return outputs, success
@@ -327,7 +340,7 @@ def playback_dataset(args):
     extra_str += "_addobj"
     extra_str += "_use_actions" if args.use_actions else ""
     extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
-    extra_str += "_cxy"
+    extra_str += "_hhf"
     if write_video and args.video_path is None: 
         args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
     assert not (args.render and write_video) # either on-screen or video but not both
@@ -502,6 +515,7 @@ def playback_dataset(args):
             new_ep_meta["target_obj_phrase"] = outputs["target_obj_phrase"]
             new_ep_meta["target_place_phrase"] = outputs["target_place_phrase"]
             new_ep_meta = json.dumps(new_ep_meta, indent=4)
+            new_obj_infos = json.dumps(outputs['obj_infos'], indent=4)
             
             print('object number:', len(env.env.object_cfgs))
             print('instruction:', outputs['lang'])
@@ -526,6 +540,7 @@ def playback_dataset(args):
                     ep_data_grp.create_dataset(f"action_dict/{k}", data=np.array(action_dict[k][()]))
             ep_data_grp.attrs["model_file"] = new_model
             ep_data_grp.attrs["ep_meta"] = new_ep_meta
+            ep_data_grp.attrs["obj_infos"] = new_obj_infos
             ep_data_grp.attrs["num_samples"] = actions.shape[0]
             total_samples += actions.shape[0]
     
