@@ -640,12 +640,20 @@ class SequenceDataset(torch.utils.data.Dataset):
             "obs/robot0_eye_in_hand_depth"
         ]
         seq = dict()
+        # if random.randint(0, 1) == 0:
         for k in keys:
             data = self.get_dataset_for_ep(demo_id, k)
             if k in masked_keys:
                 seq[k] = data[:1].repeat(seq_end_index-seq_begin_index, axis=0)
             else:
                 seq[k] = data[seq_begin_index: seq_end_index]
+        # else: # !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        #     for k in keys:
+        #         data = self.get_dataset_for_ep(demo_id, k)
+        #         if k in masked_keys:
+        #             seq[k] = data[:1].repeat(seq_end_index-seq_begin_index, axis=0)
+        #         else:
+        #             seq[k] = data[index_in_demo: index_in_demo+1].repeat(seq_end_index-seq_begin_index, axis=0)
         
         if ObsUtils.MASK_CHANNEL == 1:
             for k in masked_keys:

@@ -6,7 +6,7 @@ from tqdm import tqdm
 import os
 from collections import defaultdict
 
-data_dir = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_1105"
+data_dir = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_data"
 
 train_env_infos = defaultdict(list)
 for filepath in tqdm(glob.glob(os.path.join(data_dir, "*.hdf5"))):

@@ -14,3 +14,4 @@ robomimic/envs/__pycache__/env_robosuite.cpython-39.pyc
 tmp.txt
 actions_abs.pt
 actions.pt
+*.hdf5

@@ -97,9 +97,9 @@ DEFAULT_CAMERAS = {
 
 # set a number range of new objects for each env
 ENV_NAME2RANGE = {
-    "PnPCounterToCab": (3, 6),
+    "PnPCounterToCab": (3, 10),
     "PnPCabToCounter": (3, 6),
-    "PnPCounterToSink": (3, 6),
+    "PnPCounterToSink": (3, 10),
     "PnPSinkToCounter": (2, 4),
     "PnPCounterToMicrowave": (2, 5),
     "PnPMicrowaveToCounter": (2, 4),
@@ -231,7 +231,7 @@ def playback_trajectory_with_env(
                 # Image.fromarray(((depth-depth.min())/(depth.max()-depth.min())*255).astype(np.uint8)).save('tmp.jpg')
 
                 # save segmentation mask
-                if video_count == 0:
+                if video_count == 0 and args.write_gt_mask:
                     mask_name = f"{cam_name}_mask"
                     tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
                     tmp_mask = np.zeros(tmp_seg.shape, dtype=np.uint8)
@@ -259,8 +259,7 @@ def playback_trajectory_with_env(
         new_distr_names = [f"new_distr_{i}_main" for i in range(1, env.env.add_object_num+1)]
         
         # video render
-        if not args.write_first_frame and video_count % video_skip == 0 or \
-            args.write_first_frame and video_count == 0:
+        if video_writer is not None and (not args.write_first_frame and video_count % video_skip == 0 or args.write_first_frame and video_count == 0):
             video_img = []
             for cam_name in camera_names:
                 video_img.append(env.render(mode="rgb_array", height=args.camera_height, width=args.camera_width, camera_name=cam_name))
@@ -270,25 +269,31 @@ def playback_trajectory_with_env(
             video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
             if args.write_gt_mask:
                 seg_img = []
+                seg_img2 = []
                 for cam_name in camera_names:
                     tmp_seg = seg_sensors[cam_name]().squeeze(-1)[::-1]
                     # seg_rgb = segmentation_to_rgb(tmp_seg, random_colors=False)
                     seg_rgb = np.zeros((args.camera_height, args.camera_width, 3), dtype=np.uint8)
+                    seg_rgb2 = np.zeros((args.camera_height, args.camera_width, 3), dtype=np.uint8)
                     for tmp_target_obj_str in target_obj_str.split('/'):
                         seg_rgb[tmp_seg == name2id[tmp_target_obj_str] + 1, 0] = 255
                     if target_place_str:
-                        seg_rgb[tmp_seg == name2id[target_place_str] + 1, 2] = 255
+                        seg_rgb2[tmp_seg == name2id[target_place_str] + 1, 2] = 255
                         # a special case
                         if (tmp_seg == name2id[target_place_str] + 1).sum() == 0 and target_place_str == "container_main" and None in name2id and name2id[target_place_str] == name2id[None] - 1:
-                            seg_rgb[tmp_seg == name2id[None] + 1, 2] = 255
+                            seg_rgb2[tmp_seg == name2id[None] + 1, 2] = 255
                     seg_img.append(seg_rgb)
+                    seg_img2.append(seg_rgb2)
                 if len(save_masks) == 0:
                     save_masks.extend(seg_img)
                 seg_img = np.concatenate(seg_img, axis=1)
+                seg_img2 = np.concatenate(seg_img2, axis=1)
                 seg_video_img = video_img
-                seg_video_img = seg_video_img // 3 + seg_img // 3 * 2
+                # alpha = 0.6
+                seg_video_img = seg_video_img // 5 * 3 + seg_img // 5 * 2
+                seg_video_img2 = video_img // 5 * 3 + seg_img2 // 5 * 2
                 # breakpoint()
-                video_img = np.concatenate([video_img, seg_video_img], axis=0)
+                video_img = np.concatenate([video_img, seg_video_img, seg_video_img2], axis=0)
             frame = video_img.copy()
             text1 = env._ep_lang_str
             position1 = (10, 50)
@@ -308,6 +313,10 @@ def playback_trajectory_with_env(
         if action_playback:
             outputs['actions_abs'].append(env.base_env.convert_rel_to_abs_action(actions[i]))
         outputs['states'].append(state)
+        
+        if args.skip_replay:
+            success = True
+            break
     
     # breakpoint()
     print(len(frames))
@@ -329,6 +338,22 @@ def playback_trajectory_with_env(
         "save_obs_dict": save_obs_dict,
         "obj_infos": obj_infos
     })
+    
+    if args.skip_replay:
+        state = {
+            "model": env.env.sim.model.get_xml(),
+            "states": np.array(env.env.sim.get_state().flatten()),
+            "ep_meta": env.env.get_ep_meta()
+        }
+        state["ep_meta"].update({
+            "lang": env._ep_lang_str,
+            "unique_attr": env.env.unique_attr,
+            "target_obj_phrase": env.env.target_obj_phrase,
+            "target_place_phrase": env.env.target_place_phrase
+        })
+        state["ep_meta"] = json.dumps(state["ep_meta"], indent=4)
+        outputs['state'] = state
+        
     print("Success:", success)
     return outputs, success
 
@@ -340,9 +365,12 @@ def playback_dataset(args):
     extra_str += "_addobj"
     extra_str += "_use_actions" if args.use_actions else ""
     extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
+    extra_str += f"_{args.unique_attr}" if args.unique_attr else ""
     extra_str += "_hhf"
     if write_video and args.video_path is None: 
         args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
+    tmp_save_path = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_data/tmp_env_infos.pt"
+    tmp_save_infos = defaultdict(list)
     assert not (args.render and write_video) # either on-screen or video but not both
     
     if args.save_new_data:
@@ -424,7 +452,8 @@ def playback_dataset(args):
         demos = demos[:args.n]
     
     demos = demos[args.interval_left:args.interval_right]
-    add_num_range = ENV_NAME2RANGE[env._env_name]
+    # demos = demos[2:3]
+    # add_num_min, add_num_max = ENV_NAME2RANGE[env._env_name]
 
     # maybe dump video
     video_writer = None
@@ -435,11 +464,14 @@ def playback_dataset(args):
         
     success_num = 0
     total_samples = 0
+    # breakpoint()
     for ind in range(len(demos)):
         ep = demos[ind]
         f_ep = f[f"data/{ep}"]
         print(f"Playing back episode: {ep}")
-
+        
+        add_num_min, add_num_max = ENV_NAME2RANGE[env._env_name]
+        
         # prepare initial state to reload from
         states = f_ep["states"][()]
         initial_state = dict(states=states[0])
@@ -452,21 +484,27 @@ def playback_dataset(args):
             tmp_ep_meta["unique_attr"] = "class"
             initial_state["ep_meta"] = json.dumps(tmp_ep_meta, indent=4)
         
+        if args.unique_attr:
+            tmp_ep_meta = json.loads(initial_state["ep_meta"])
+            tmp_ep_meta["unique_attr"] = args.unique_attr
+            initial_state["ep_meta"] = json.dumps(tmp_ep_meta, indent=4)
+        
         ori_model = copy.copy(initial_state['model'])
         
         # supply actions if using open-loop action playback
         actions = f_ep["actions"][()]
         
         success = False
-        try_idx = 3 
-        for try_idx in range(try_idx):
+        try_max = 3 
+        for try_idx in range(try_max):
             try:
-                if not args.use_actions:
+                if not args.use_actions or try_idx == try_max - 1:
                     env.env.add_object_num = 0
                 elif args.add_obj_num != -1:
                     env.env.add_object_num = args.add_obj_num
                 else:
-                    env.env.add_object_num = random.randint(*add_num_range)
+                    env.env.add_object_num = random.randint(add_num_min, add_num_max)
+                # env.env.add_object_num += 2 # !!!
                 initial_state['model'] = copy.copy(ori_model)
                 outputs, success = playback_trajectory_with_env(
                     env=env, 
@@ -490,14 +528,17 @@ def playback_dataset(args):
                     tgt_f.close()
                 if write_video:
                     video_writer.close()
+                if args.skip_replay:
+                    torch.save(tmp_save_infos, tmp_save_path)
                 return
             except Exception as e:
                 print("try idx:", try_idx)
                 print(traceback.format_exc())
                 print(e)
                 print("fail to reset env, try again...")
+                add_num_max = max(add_num_max - 1, 1)
+                add_num_min = max(add_num_min - 1, 0)
             
-
         if not success or outputs is None:
             continue
 
@@ -506,6 +547,10 @@ def playback_dataset(args):
                 video_writer.append_data(frame)
 
         success_num += 1
+        
+        if args.skip_replay:
+            tmp_save_infos[env._env_name].append(outputs['state'])
+            del outputs['state']
         
         if args.save_new_data:
             new_model = outputs["new_model"]
@@ -545,6 +590,9 @@ def playback_dataset(args):
             total_samples += actions.shape[0]
     
     print(f"success: {success_num}/{len(demos)}")
+    
+    if args.skip_replay:
+        torch.save(tmp_save_infos, tmp_save_path)
     
     if args.save_new_data:
         if "mask" in f:
@@ -698,6 +746,12 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
+        "--skip_replay",
+        action="store_true",
+        help="skip the replay of actions, only for write first frames and masks"
+    )
+    
+    parser.add_argument(
         "--save_new_data",
         action="store_true",
         help="save successful demos (with added objects)"
@@ -731,6 +785,12 @@ if __name__ == "__main__":
     
     parser.add_argument(
         "--global_process_id",
+        default=None
+    )
+    
+    parser.add_argument(
+        "--unique_attr",
+        type=str,
         default=None
     )
 

@@ -22,12 +22,12 @@ def make_generator_helper(args):
 
 
     # EVAL_TASKS = ["OpenDrawer", "CloseDrawer"] # or evaluate all tasks by setting EVAL_TASKS = None
-    # EVAL_TASKS = None
-    EVAL_TASKS = ["PnPCounterToCab"]
+    EVAL_TASKS = None
+    # EVAL_TASKS = ["PnPCounterToCab"]
     ### Multi-task training on atomic tasks ###
-    dataset_cfgs = (*get_ds_cfg("PnPCounterToCab", src="addobj", eval=EVAL_TASKS, filter_key="3000_demos"), )
+    dataset_cfgs = (*get_ds_cfg("single_stage", src="addobj", eval=EVAL_TASKS, filter_key="3000_demos"), )
     if args.add_raw_data:
-        dataset_cfgs += (*get_ds_cfg("PnPCounterToCab", src="raw", eval=[], filter_key="3000_demos"), )
+        dataset_cfgs += (*get_ds_cfg("single_stage", src="raw", eval=[], filter_key="3000_demos"), )
     
     generator.add_param(
         key="train.data",
