@@ -15,3 +15,8 @@ tmp.txt
 actions_abs.pt
 actions.pt
 *.hdf5
+robomimic/scripts/tmp.py
+download_hub.py
+process_pids.txt
+robomimic/scripts/run_multiple_add_objects_0409.sh
+robomimic/scripts/run_multiple_add_objects_tmp.sh
