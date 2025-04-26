@@ -301,10 +301,10 @@ def playback_trajectory_with_env(
             font = cv2.FONT_HERSHEY_SIMPLEX
             thickness = 1
             font_scale = 0.6
-            cv2.putText(frame, text1, position1, font, font_scale, color, thickness)
+            # cv2.putText(frame, text1, position1, font, font_scale, color, thickness)
             text2 = f"{ep}  Unique Attribute: {env.env.unique_attr}"
             position2 = (10, 100)
-            cv2.putText(frame, text2, position2, font, font_scale, color, thickness)
+            # cv2.putText(frame, text2, position2, font, font_scale, color, thickness)
             frames.append(frame)
         video_count += 1
 
@@ -470,6 +470,9 @@ def playback_dataset(args):
         f_ep = f[f"data/{ep}"]
         print(f"Playing back episode: {ep}")
         
+        # if 'obj_info' in f_ep.attrs and len(json.loads(f_ep.attrs['obj_infos'])) < 6:
+        #     continue
+        
         add_num_min, add_num_max = ENV_NAME2RANGE[env._env_name]
         
         # prepare initial state to reload from
@@ -504,7 +507,6 @@ def playback_dataset(args):
                     env.env.add_object_num = args.add_obj_num
                 else:
                     env.env.add_object_num = random.randint(add_num_min, add_num_max)
-                # env.env.add_object_num += 2 # !!!
                 initial_state['model'] = copy.copy(ori_model)
                 outputs, success = playback_trajectory_with_env(
                     env=env, 
