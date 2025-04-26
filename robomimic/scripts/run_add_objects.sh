@@ -2,9 +2,11 @@
 
 data_path=$1
 
+# --n, the number of demos to process
+
 python robomimic/scripts/playback_demos.py \
     --dataset ${data_path} \
-    --n 2 \
+    --n 10 \
     --camera_height 512 \
     --camera_width 512 \
     --write_gt_mask \

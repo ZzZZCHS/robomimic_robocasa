@@ -1,60 +1,3 @@
-"""
-A script to visualize dataset trajectories by loading the simulation states
-one by one or loading the first state and playing actions back open-loop.
-The script can generate videos as well, by rendering simulation frames
-during playback. The videos can also be generated using the image observations
-in the dataset (this is useful for real-robot datasets) by using the
---use-obs argument.
-
-Args:
-    dataset (str): path to hdf5 dataset
-
-    filter_key (str): if provided, use the subset of trajectories
-        in the file that correspond to this filter key
-
-    n (int): if provided, stop after n trajectories are processed
-
-    use-obs (bool): if flag is provided, visualize trajectories with dataset 
-        image observations instead of simulator
-
-    use-actions (bool): if flag is provided, use open-loop action playback 
-        instead of loading sim states
-
-    render (bool): if flag is provided, use on-screen rendering during playback
-    
-    video_path (str): if provided, render trajectories to this video file path
-
-    video_skip (int): render frames to a video every @video_skip steps
-
-    camera_names (str or [str]): camera name(s) / image observation(s) to 
-        use for rendering on-screen or to video
-
-    first (bool): if flag is provided, use first frame of each episode for playback
-        instead of the entire episode. Useful for visualizing task initializations.
-
-Example usage below:
-
-    # force simulation states one by one, and render agentview and wrist view cameras to video
-    python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --camera_names agentview robot0_eye_in_hand \
-        --video_path /tmp/playback_dataset.mp4
-
-    # playback the actions in the dataset, and render agentview camera during playback to video
-    python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --use-actions --camera_names agentview \
-        --video_path /tmp/playback_dataset_with_actions.mp4
-
-    # use the observations stored in the dataset to render videos of the dataset trajectories
-    python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --use-obs --camera_names agentview_image \
-        --video_path /tmp/obs_trajectory.mp4
-
-    # visualize initial states in the demonstration data
-    python playback_dataset.py --dataset /path/to/dataset.hdf5 \
-        --first --camera_names agentview \
-        --video_path /tmp/dataset_task_inits.mp4
-"""
-
 import os
 import json
 import h5py
@@ -362,14 +305,14 @@ def playback_dataset(args):
     # some arg checking
     write_video = args.write_video #(args.video_path is not None)
     extra_str = ""
-    extra_str += "_addobj"
+    # extra_str += "_addobj"
     extra_str += "_use_actions" if args.use_actions else ""
     extra_str += f"_process{args.global_process_id}" if args.global_process_id else ""
     extra_str += f"_{args.unique_attr}" if args.unique_attr else ""
-    extra_str += "_hhf"
+    # extra_str += "_hhf"
     if write_video and args.video_path is None: 
         args.video_path = args.dataset.split(".hdf5")[0] + extra_str + ".mp4"
-    tmp_save_path = "/ailab/user/huanghaifeng/work/robocasa_exps_haifeng/robocasa/datasets/v0.1/generated_data/tmp_env_infos.pt"
+    tmp_save_path = ""
     tmp_save_infos = defaultdict(list)
     assert not (args.render and write_video) # either on-screen or video but not both
     
@@ -614,6 +557,7 @@ def playback_dataset(args):
         
     if write_video:
         video_writer.close()
+        print("Video is saved at ", args.video_path)
     
     # if args.save_new_data:
     #     torch.save(save_data_info, tgt_data_info_path)
